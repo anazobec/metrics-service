@@ -1,24 +1,33 @@
 """
 Base Django settings for metrics_service following AAP standards.
+
+These are default values that can be overridden by:
+1. config/settings.yaml (Dynaconf)
+2. Environment variables with METRICS_SERVICE_ prefix
+3. /etc/ansible-automation-platform/settings.yaml (production)
+
+All environment variable overrides are handled by Dynaconf in settings/__init__.py
 """
 
-import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get("METRICS_SERVICE_SECRET_KEY", "dev-secret-key-change-in-production")
+# Override with METRICS_SERVICE_SECRET_KEY environment variable
+SECRET_KEY = "dev-secret-key-change-in-production"
 
 # SECURITY WARNING: don't run with debug turned on in production!
+# Override with METRICS_SERVICE_DEBUG environment variable
 DEBUG = True
 
 ALLOWED_HOSTS = ["*"]
 
 # Service identification for AAP
+# Override with METRICS_SERVICE_SERVICE_TYPE and METRICS_SERVICE_SERVICE_ID
 SERVICE_TYPE = "metrics-service"
-SERVICE_ID = os.environ.get("METRICS_SERVICE_ID", "generated-uuid")
+SERVICE_ID = "generated-uuid"
 
 # Application definition
 DJANGO_APPS = [
@@ -100,16 +109,17 @@ ASGI_APPLICATION = "metrics_service.asgi.application"
 
 # Database
 # PostgreSQL as default database
+# Override with METRICS_SERVICE_DATABASES__default__HOST, etc.
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "HOST": os.environ.get("METRICS_SERVICE_DB_HOST", "127.0.0.1"),
-        "PORT": os.environ.get("METRICS_SERVICE_DB_PORT", "55432"),
-        "USER": os.environ.get("METRICS_SERVICE_DB_USER", "metrics_service"),
-        "PASSWORD": os.environ.get("METRICS_SERVICE_DB_PASSWORD", "metrics_service"),
-        "NAME": os.environ.get("METRICS_SERVICE_DB_NAME", "metrics_service"),
+        "HOST": "127.0.0.1",
+        "PORT": "5432",
+        "USER": "metrics_service",
+        "PASSWORD": "metrics_service",
+        "NAME": "metrics_service",
         "OPTIONS": {
-            "sslmode": os.environ.get("METRICS_SERVICE_DB_SSLMODE", "prefer"),
+            "sslmode": "prefer",
         },
     }
 }
@@ -245,14 +255,15 @@ RESOURCE_SERVER: dict[str, str | bool | None] = {
 RESOURCE_SERVER_SYNC_ENABLED = False
 
 # Background Task Configuration (Dispatcherd)
-# Dispatcherd is always enabled in this service
+# Dispatcherd is always enabled in this service (can be disabled in tests)
+# Override with METRICS_SERVICE_DISPATCHERD_ENABLED environment variable
 DISPATCHERD_ENABLED = True
 
 # Feature Flags
+# Override with METRICS_SERVICE_FEATURE_FLAGS__ANONYMIZED_DATA_COLLECTION, etc.
 FEATURE_FLAGS = {
-    "DISPATCHERD_ENABLED": True,
-    "ANONYMIZED_DATA_COLLECTION": os.environ.get("METRICS_SERVICE_ANONYMIZED_DATA", "true").lower() == "true",
-    "METRICS_COLLECTION_ENABLED": os.environ.get("METRICS_SERVICE_METRICS_COLLECTION", "false").lower() == "true",
+    "ANONYMIZED_DATA_COLLECTION": True,
+    "METRICS_COLLECTION_ENABLED": False,
 }
 
 # Cache Configuration

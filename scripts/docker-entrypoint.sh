@@ -7,11 +7,11 @@ echo "🚀 Starting Metrics Service container..."
 echo "⏳ Waiting for database to be ready..."
 uv run python -c "
 import os, time, psycopg
-host = os.environ.get('METRICS_SERVICE_DB_HOST', 'postgres')
-port = os.environ.get('METRICS_SERVICE_DB_PORT', '5432')
-user = os.environ.get('METRICS_SERVICE_DB_USER', 'metrics_service')
-password = os.environ.get('METRICS_SERVICE_DB_PASSWORD', 'metrics_service')
-db = os.environ.get('METRICS_SERVICE_DB_NAME', 'metrics_service')
+host = os.environ.get('METRICS_SERVICE_DATABASES__default__HOST', 'postgres')
+port = os.environ.get('METRICS_SERVICE_DATABASES__default__PORT', '5432')
+user = os.environ.get('METRICS_SERVICE_DATABASES__default__USER', 'metrics_service')
+password = os.environ.get('METRICS_SERVICE_DATABASES__default__PASSWORD', 'metrics_service')
+db = os.environ.get('METRICS_SERVICE_DATABASES__default__NAME', 'metrics_service')
 
 max_attempts = 30
 attempt = 0

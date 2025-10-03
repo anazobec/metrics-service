@@ -4,13 +4,16 @@ API v1 views for metrics_service following AAP standards.
 
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.oauth2_provider.permissions import OAuth2ScopePermission
+from ansible_base.rbac.api.permissions import AnsibleBaseObjectPermissions
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 
 from apps.core.models import Organization, User
 from apps.core.permissions import SystemAuditorAwarePermissions
+from metrics_service.settings import DYNACONF
 
 from .serializers import (
     OrganizationSerializer,
@@ -136,3 +139,39 @@ class OrganizationViewSet(AnsibleBaseDjangoAppApiView, viewsets.ModelViewSet):
                 return Response(status=status.HTTP_204_NO_CONTENT)
             except User.DoesNotExist:
                 return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+class ConfigView(AnsibleBaseDjangoAppApiView, viewsets.ViewSet):
+    permission_classes = [IsAdminUser, AnsibleBaseObjectPermissions]
+
+    @extend_schema(operation_id="config_retrieve", description="Get current configuration", responses={200: dict})
+    def list(self, request):
+        return Response(DYNACONF.to_dict())
+
+    @extend_schema(
+        operation_id="config_update", description="Update current configuration", request=dict, responses={204: None}
+    )
+    @action(detail=False, methods=["post"])
+    def create(self, request):
+        DYNACONF.merge(request.data)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @extend_schema(
+        operation_id="config_reload",
+        description="Reload current configuration from files and environment variables",
+        responses={204: {"message": "Configuration reloaded successfully"}},
+    )
+    @action(detail=False, methods=["post"])
+    def reload(self, request):
+        try:
+            DYNACONF.reload()
+            return Response({"message": "Configuration reloaded successfully"}, status=status.HTTP_204_NO_CONTENT)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def config(self, request):
+        if request.method == "GET":
+            return Response(DYNACONF.to_dict())
+        elif request.method == "POST":
+            DYNACONF.merge(request.data)
+            return Response(status=status.HTTP_204_NO_CONTENT)

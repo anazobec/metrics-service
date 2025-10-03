@@ -160,6 +160,12 @@ LOGGING = {
 # Disable dispatcherd during tests to avoid background processes
 DISPATCHERD_ENABLED = False
 
+# Disable feature flags during tests
+FEATURE_FLAGS = {
+    "ANONYMIZED_DATA_COLLECTION": False,
+    "METRICS_COLLECTION_ENABLED": False,
+}
+
 # Test-specific apps - INSTALLED_APPS is already defined in defaults.py
 
 # Static files settings for tests

@@ -32,6 +32,7 @@ docker-compose exec metrics-service python manage.py createsuperuser
 ```
 
 Your service will be available at:
+
 - **Application**: http://localhost:8000
 - **API Documentation**: http://localhost:8000/api/docs/
 - **Admin Interface**: http://localhost:8000/admin/
@@ -84,24 +85,28 @@ metrics-service/
 ### Key Components
 
 **Core Models** (`apps/core/models.py`)
+
 - User management with Django-Ansible-Base
 - Organization and team hierarchy
 - RBAC permissions and roles
 
 **Task System** (`apps/tasks/`)
+
 - Feature-flag controlled task groups (System, Anonymized Data, Metrics Collection)
 - Automatic task routing with Django signals
-- APScheduler integration for cron-based scheduling  
+- APScheduler integration for cron-based scheduling
 - Dispatcherd background task execution
 - Task execution tracking and monitoring
 - Built-in task functions and metrics collection
 
 **API Layer** (`apps/api/v1/`)
+
 - RESTful endpoints with filtering and pagination
 - OpenAPI/Swagger documentation
 - Authentication and permission controls
 
 **Dashboard** (`apps/dashboard/`)
+
 - Real-time task monitoring
 - Task creation and management interface
 - Live status updates every 5 seconds
@@ -111,6 +116,7 @@ metrics-service/
 ### Authentication
 
 The API supports multiple authentication methods:
+
 - Session authentication (for web interface)
 - Token authentication
 - OAuth2 tokens (for third-party integrations)
@@ -142,12 +148,14 @@ GET /api/v1/tasks/available_functions/
 ### Built-in Task Functions
 
 **System Tasks** (always enabled):
+
 - `cleanup_old_data` - Clean up old system data
 - `cleanup_old_tasks` - Clean up completed/failed tasks
 - `send_notification_email` - Send notification emails
 - `process_user_data` - Process user data in background
 
 **Metrics Collection Tasks** (feature flag controlled):
+
 - `collect_anonymous_metrics` - Collect anonymous system metrics
 - `collect_config_metrics` - Collect configuration information
 - `collect_job_host_summary` - Collect job execution statistics
@@ -175,6 +183,7 @@ python manage.py metrics_service cron start
 ### Automatic Task Routing
 
 Tasks are automatically routed based on their properties:
+
 - **Immediate tasks** → Direct to dispatcherd
 - **Scheduled tasks** → APScheduler with DateTrigger
 - **Recurring tasks** → APScheduler with CronTrigger
@@ -184,6 +193,7 @@ No manual intervention required - create a task and it's automatically processed
 ### Task Groups & Feature Flags
 
 Control task execution with environment variables:
+
 ```bash
 # Enable/disable anonymized data collection
 METRICS_SERVICE_ANONYMIZED_DATA=true
@@ -226,6 +236,7 @@ pre-commit run
 ```
 
 The pre-commit configuration automatically:
+
 - Syncs requirements files when `pyproject.toml` or `uv.lock` changes
 - Ensures requirements files are always up-to-date before commits
 
@@ -261,9 +272,11 @@ python manage.py metrics_service init-system-tasks
 
 ## Configuration
 
-### Environment Variables
+Metrics Service uses [Dynaconf](https://www.dynaconf.com/) for settings management, following the [AAP Phase 1 standards](https://handbook.eng.ansible.com/proposals/0014-Django-Settings).
 
-Key configuration options:
+### Quick Start
+
+**Development Mode** (default):
 
 ```bash
 # Database
@@ -281,13 +294,54 @@ METRICS_SERVICE_ALLOWED_HOSTS=localhost,yourdomain.com
 # Task Feature Flags
 METRICS_SERVICE_ANONYMIZED_DATA=true
 METRICS_SERVICE_METRICS_COLLECTION=false
+# Just run - no configuration required
+python manage.py runserver
 ```
 
-### Settings Files
+**Production Mode**:
 
-Configuration is managed through:
-- **Environment variables** - Runtime configuration
-- **`config/settings.yaml`** - Complex configuration via Dynaconf
+```bash
+# Set environment mode and required secrets
+export METRICS_SERVICE_MODE=production
+export METRICS_SERVICE_SECRET_KEY="your-secure-random-key"
+export METRICS_SERVICE_ALLOWED_HOSTS="yourdomain.com,api.yourdomain.com"
+
+# Override defaults as needed
+export METRICS_SERVICE_DATABASES__default__HOST=prod-db.example.com
+export METRICS_SERVICE_DATABASES__default__PASSWORD=secure-password
+
+python manage.py runserver
+```
+
+### Configuration Methods
+
+Settings are loaded in order of precedence (lowest to highest):
+
+1. **`metrics_service/settings/defaults.py`** - Base Django defaults
+2. **`config/settings.yaml`** - Environment-specific configuration
+3. **`/etc/ansible-automation-platform/settings.yaml`** - System-wide AAP settings
+4. **Environment variables** with `METRICS_SERVICE_` prefix - **Highest priority**
+
+### Common Environment Variables
+
+| Variable                                       | Description                               | Required in Production       |
+| ---------------------------------------------- | ----------------------------------------- | ---------------------------- |
+| `METRICS_SERVICE_MODE`                         | Environment mode (development/production) | No (defaults to development) |
+| `METRICS_SERVICE_SECRET_KEY`                   | Django secret key                         | **Yes**                      |
+| `METRICS_SERVICE_DEBUG`                        | Enable debug mode                         | No                           |
+| `METRICS_SERVICE_DATABASES__default__HOST`     | Database host                             | No (has default)             |
+| `METRICS_SERVICE_DATABASES__default__PASSWORD` | Database password                         | No (has default)             |
+| `METRICS_SERVICE_ALLOWED_HOSTS`                | Allowed hosts (comma-separated)           | **Yes** (production)         |
+
+**Note:** Use double underscores (`__`) for nested settings:
+
+```bash
+# Nested database configuration
+export METRICS_SERVICE_DATABASES__default__HOST=localhost
+export METRICS_SERVICE_DATABASES__default__PORT=5432
+```
+
+For comprehensive configuration documentation, validators, troubleshooting, and testing information, see **[metrics_service/settings/README.md](metrics_service/settings/README.md)**.
 
 ## Deployment
 
@@ -331,3 +385,4 @@ This project is licensed under the Apache License - see the [LICENSE](LICENSE) f
 - **Documentation**: Check the [CLAUDE.md](CLAUDE.md) file for detailed development guidance
 - **Issues**: Report bugs and feature requests via GitHub issues
 - **API Documentation**: Interactive docs available at `/api/docs/` when running
+```
