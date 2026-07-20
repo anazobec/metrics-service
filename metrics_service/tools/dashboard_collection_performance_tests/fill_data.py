@@ -116,6 +116,10 @@ def main() -> None:  # noqa: PLR0915
     scripts_dir = mu_path / "tools" / "anonymized_db_perf_data"
     python = _find_python(mu_path)
     env = os.environ.copy()
+    # Don't leak metrics-service's own DJANGO_SETTINGS_MODULE into the metrics-utility
+    # subprocess — it would shadow metrics-utility's own settings (which target the
+    # AWX DB) and cause it to connect to the wrong database (metrics_service's DB).
+    env.pop("DJANGO_SETTINGS_MODULE", None)
 
     db_host = env.get("METRICS_UTILITY_DB_HOST", "localhost")
     db_name = env.get("METRICS_UTILITY_DB_NAME", "")
@@ -153,7 +157,8 @@ def main() -> None:  # noqa: PLR0915
             [
                 str(python),
                 "fill_perf_db_data.py",
-                f"--date={current.isoformat()}",
+                f"--since={current.isoformat()}",
+                f"--until={(current + timedelta(days=1)).isoformat()}",
                 f"--job-count={job_count}",
                 f"--host-count={host_count}",
                 f"--task-count={task_count}",

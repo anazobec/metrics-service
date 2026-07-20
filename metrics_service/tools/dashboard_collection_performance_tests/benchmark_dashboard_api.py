@@ -29,6 +29,18 @@ METRICS_URL         Prometheus /metrics endpoint URL      (optional)
 TEST_SINCE          ISO-8601 start of the test period   (default: 2024-01-01)
 TEST_UNTIL          ISO-8601 end of the test period     (default: 2024-03-31)
 DB_NAME             AWX database alias (default: awx)
+DIRECT_DB           Set to "true" to bypass HTTP entirely and drive the
+                     benchmark straight through the ORM/DRF test client.
+                     Use this in production deployments where the
+                     /api/v1/tasks/ HTTP API only accepts a JWT from the
+                     AAP gateway and Basic Auth is rejected. Task-trigger
+                     and collection durations are measured from the
+                     TaskExecution record, so they're unaffected by this
+                     flag. The CSV export duration, however, is measured
+                     as wall-clock time through force_authenticate(), which
+                     skips auth middleware entirely — that figure excludes
+                     any JWT/RBAC overhead the real HTTP path incurs.
+                     (default: false)
 
 Usage:
     BASE_URL=http://localhost:18002/api \\
@@ -45,6 +57,7 @@ import sys
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import requests
 from requests.auth import HTTPBasicAuth
@@ -52,13 +65,17 @@ from requests.auth import HTTPBasicAuth
 # ---------------------------------------------------------------------------
 # Django bootstrap — needed only for the JobData delete step
 # ---------------------------------------------------------------------------
-project_root = Path(__file__).parent.parent.parent.parent
+script_dir = Path(__file__).parent
+project_root = script_dir.parent.parent.parent
+sys.path.insert(0, str(script_dir))
 sys.path.insert(0, str(project_root))
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "metrics_service.settings")
 
 import django
 
 django.setup()
+
+from prometheus_utils import prometheus_delta, read_prometheus_metrics
 
 from apps.dashboard_reports.models import JobData, TemplateMetadata
 
@@ -71,6 +88,7 @@ USERNAME = os.environ.get("BENCHMARK_USER", "superadmin")
 PASSWORD = os.environ.get("PASSWORD", "")
 METRICS_URL = os.environ.get("METRICS_URL", "")
 DB_NAME = os.environ.get("DB_NAME", "awx")
+DIRECT_DB = os.environ.get("DIRECT_DB", "false").lower() == "true"
 
 until_str = os.environ.get("TEST_UNTIL", "2024-03-31")
 until = datetime.fromisoformat(until_str).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=UTC)
@@ -91,13 +109,24 @@ POLL_TIMEOUT = 3600  # seconds before giving up on a task
 
 AUTH = HTTPBasicAuth(USERNAME, PASSWORD)
 
+if not DIRECT_DB:
+    _base_host = urlsplit(BASE_URL).hostname or ""
+    if urlsplit(BASE_URL).scheme != "https" and _base_host not in ("localhost", "127.0.0.1", "::1"):
+        print(
+            f"WARNING: BASE_URL={BASE_URL} is plain HTTP against a non-loopback host. "
+            "HTTPBasicAuth sends credentials base64-encoded (not encrypted) — they will be "
+            "exposed on the wire. Use HTTPS, or run with DIRECT_DB=true to bypass HTTP auth "
+            "entirely.",
+            file=sys.stderr,
+        )
+
 
 # ---------------------------------------------------------------------------
 # API helpers
 # ---------------------------------------------------------------------------
 
 
-def trigger_task(function_name: str, task_data: dict | None = None) -> str:
+def _trigger_task_http(function_name: str, task_data: dict | None = None) -> str:
     """POST to schedule_immediate and return the task ID."""
     payload = {
         "function_name": function_name,
@@ -114,7 +143,19 @@ def trigger_task(function_name: str, task_data: dict | None = None) -> str:
     return resp.json()["task_id"]
 
 
-def wait_for_task(task_id: str) -> float:
+def _trigger_task_direct_db(function_name: str, task_data: dict | None = None) -> str:
+    """Create the Task row directly, bypassing the HTTP API entirely."""
+    from apps.tasks.models import Task
+
+    task = Task.objects.create(
+        name=f"benchmark: {function_name}",
+        function_name=function_name,
+        task_data=task_data or {},
+    )
+    return str(task.id)
+
+
+def _wait_for_task_http(task_id: str) -> float:
     """Poll until task reaches a terminal state. Returns execution seconds (started_at → completed_at)."""
     deadline = time.perf_counter() + POLL_TIMEOUT
     while time.perf_counter() < deadline:
@@ -130,6 +171,65 @@ def wait_for_task(task_id: str) -> float:
             raise RuntimeError(f"Task {task_id} {status}: {data.get('error', '')}")
         time.sleep(POLL_INTERVAL)
     raise TimeoutError(f"Task {task_id} did not complete within {POLL_TIMEOUT}s")
+
+
+def _wait_for_task_direct_db(task_id: str) -> float:
+    """Poll the Task row directly, bypassing the HTTP API entirely."""
+    from apps.tasks.models import Task
+
+    deadline = time.perf_counter() + POLL_TIMEOUT
+    while time.perf_counter() < deadline:
+        task = Task.objects.get(id=task_id)
+        if task.status == "completed":
+            if task.started_at and task.completed_at:
+                return (task.completed_at - task.started_at).total_seconds()
+            return 0.0
+        if task.status in ("failed", "cancelled"):
+            raise RuntimeError(f"Task {task_id} {task.status}: {task.result_data}")
+        time.sleep(POLL_INTERVAL)
+    raise TimeoutError(f"Task {task_id} did not complete within {POLL_TIMEOUT}s")
+
+
+def _export_csv_http() -> float | None:
+    try:
+        start_time = time.perf_counter()
+        resp = requests.get(
+            f"{BASE_URL}/v1/dashboard_reports/report/export/?period=last_90_days", auth=AUTH, timeout=10
+        )
+        resp.raise_for_status()
+        end_time = time.perf_counter()
+
+        return end_time - start_time
+    except Exception as e:
+        print(f"Failed to download CSV: {e}")
+        return None
+
+
+def _export_csv_direct_db() -> float | None:
+    """Hit the export view in-process via the DRF test client, bypassing HTTP auth entirely."""
+    from django.contrib.auth import get_user_model
+    from rest_framework.test import APIClient
+
+    try:
+        user = get_user_model().objects.get(username=USERNAME)
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        start_time = time.perf_counter()
+        resp = client.get("/api/v1/dashboard_reports/report/export/?period=last_90_days")
+        if resp.status_code != 200:
+            raise RuntimeError(f"export failed: {resp.status_code} {resp.content[:300]}")
+        end_time = time.perf_counter()
+
+        return end_time - start_time
+    except Exception as e:
+        print(f"Failed to download CSV: {e}")
+        return None
+
+
+trigger_task = _trigger_task_direct_db if DIRECT_DB else _trigger_task_http
+wait_for_task = _wait_for_task_direct_db if DIRECT_DB else _wait_for_task_http
+export_csv = _export_csv_direct_db if DIRECT_DB else _export_csv_http
 
 
 def run_phase(label: str, phase_since: datetime, phase_until: datetime) -> float:
@@ -151,41 +251,15 @@ def run_phase(label: str, phase_since: datetime, phase_until: datetime) -> float
     )
     task_elapsed = wait_for_task(task_id)
     wall_elapsed = time.perf_counter() - wall_start
+    csv_export_elapsed = export_csv()
 
     job_data_count = JobData.objects.count()
-    print(f"  Duration (task):     {task_elapsed:.2f}s")
-    print(f"  Duration (wall):     {wall_elapsed:.2f}s  (includes queue wait)")
-    print(f"  JobData rows in DB:  {job_data_count:,}")
-    return task_elapsed
-
-
-# ---------------------------------------------------------------------------
-# Prometheus helpers
-# ---------------------------------------------------------------------------
-
-
-def read_prometheus_metrics(url: str) -> dict:
-    """Fetch /metrics and parse into {metric_name: float}."""
-    if not url:
-        return {}
-    try:
-        resp = requests.get(url, timeout=5)
-        resp.raise_for_status()
-    except Exception:
-        return {}
-    result = {}
-    for line in resp.text.splitlines():
-        if line.startswith("#") or not line.strip():
-            continue
-        parts = line.split()
-        if len(parts) >= 2:
-            result[parts[0]] = float(parts[-1])
-    return result
-
-
-def prometheus_delta(before: dict, after: dict, key: str) -> float:
-    """Return how much a Prometheus counter increased between two snapshots."""
-    return after.get(key, 0) - before.get(key, 0)
+    csv_export_str = f"{csv_export_elapsed * 1000:.2f}ms" if csv_export_elapsed is not None else "FAILED"
+    print(f"  Duration (task):                      {task_elapsed:.2f}s")
+    print(f"  Duration (wall):                      {wall_elapsed:.2f}s  (includes queue wait)")
+    print(f"  Duration (csv export - last 90 days): {csv_export_str}")
+    print(f"  JobData rows in DB:                   {job_data_count:,}")
+    return task_elapsed, csv_export_elapsed
 
 
 # ---------------------------------------------------------------------------
@@ -203,22 +277,35 @@ def main() -> None:
     print(f"  Target:    {BASE_URL}")
     print(f"  User:      {USERNAME}")
     print(f"  Prometheus: {METRICS_URL or '(not configured)'}")
+    if DIRECT_DB:
+        print(
+            "  Mode:      DIRECT_DB — CSV export duration measured via force_authenticate(), "
+            "excludes JWT/RBAC auth overhead; task/collection durations unaffected"
+        )
     print(f"{'=' * 80}\n")
 
     # Verify connectivity
     print("Verifying connectivity...")
-    resp = requests.get(f"{BASE_URL}/v1/", auth=AUTH, timeout=10)
-    if not resp.ok:
-        print(f"  ERROR: {BASE_URL}/v1/ returned {resp.status_code}")
-        raise SystemExit(1)
+    if DIRECT_DB:
+        # No HTTP round trip in direct-DB mode — just confirm the benchmark user exists.
+        from django.contrib.auth import get_user_model
+
+        if not get_user_model().objects.filter(username=USERNAME).exists():
+            print(f"  ERROR: user '{USERNAME}' does not exist")
+            raise SystemExit(1)
+    else:
+        resp = requests.get(f"{BASE_URL}/v1/", auth=AUTH, timeout=10)
+        if not resp.ok:
+            print(f"  ERROR: {BASE_URL}/v1/ returned {resp.status_code}")
+            raise SystemExit(1)
     print("  OK")
 
     metrics_before = read_prometheus_metrics(METRICS_URL)
     overall_start = time.perf_counter()
 
-    month_elapsed = run_phase("Phase 1: One month collection", MONTH_SINCE, MONTH_UNTIL)
-    week_elapsed = run_phase("Phase 2: One week collection", WEEK_SINCE, WEEK_UNTIL)
-    day_elapsed = run_phase("Phase 3: One day collection", DAY_SINCE, DAY_UNTIL)
+    month_elapsed, month_csv_export_elapsed = run_phase("Phase 1: One month collection", MONTH_SINCE, MONTH_UNTIL)
+    week_elapsed, week_csv_export_elapsed = run_phase("Phase 2: One week collection", WEEK_SINCE, WEEK_UNTIL)
+    day_elapsed, day_csv_export_elapsed = run_phase("Phase 3: One day collection", DAY_SINCE, DAY_UNTIL)
 
     total_wall = time.perf_counter() - overall_start
     metrics_after = read_prometheus_metrics(METRICS_URL)
