@@ -42,6 +42,10 @@ def parse_csv(content: bytes) -> list[list[str]]:
     return list(reader)
 
 
+def currency_to_decimal(value: str) -> decimal.Decimal:
+    return decimal.Decimal(value.replace("$", "").replace(",", ""))
+
+
 # =============================================================================
 # Fixtures
 # =============================================================================
@@ -430,14 +434,14 @@ class TestExportROICSV:
         rows = parse_csv(response.content)
         assert len(rows) == 2
         for value in rows[1]:
-            assert float(value) == 0.0, f"Expected 0 for empty data, got {value}"
+            assert float(currency_to_decimal(value)) == 0.0, f"Expected 0 for empty data, got {value}"
 
     def test_roi_cost_savings_is_positive_with_data(self, job_data, admin_client):
         url = reverse("dashboard_reports:report-export")
         response = admin_client.get(url, data=build_export_query("roi"))
         assert response.status_code == 200
         rows = parse_csv(response.content)
-        assert float(rows[1][0]) > 0
+        assert float(currency_to_decimal(rows[1][0])) > 0
 
     def test_roi_automation_value_equals_manual_cost_plus_savings(self, job_data, admin_client):
         """automation_value = manual_cost_equivalent + cost_savings."""
@@ -445,9 +449,9 @@ class TestExportROICSV:
         response = admin_client.get(url, data=build_export_query("roi"))
         assert response.status_code == 200
         rows = parse_csv(response.content)
-        cost_savings = decimal.Decimal(rows[1][0])
-        manual_cost = decimal.Decimal(rows[1][3])
-        automation_value = decimal.Decimal(rows[1][5])
+        cost_savings = currency_to_decimal(rows[1][0])
+        manual_cost = currency_to_decimal(rows[1][3])
+        automation_value = currency_to_decimal(rows[1][5])
         assert abs(automation_value - (manual_cost + cost_savings)) < decimal.Decimal("0.01")
 
     def test_roi_roi_percentage_calculation(self, job_data, admin_client):
@@ -456,8 +460,8 @@ class TestExportROICSV:
         response = admin_client.get(url, data=build_export_query("roi"))
         assert response.status_code == 200
         rows = parse_csv(response.content)
-        cost_savings = decimal.Decimal(rows[1][0])
-        automation_cost = decimal.Decimal(rows[1][2])
+        cost_savings = currency_to_decimal(rows[1][0])
+        automation_cost = currency_to_decimal(rows[1][2])
         roi_percentage = decimal.Decimal(rows[1][4])
         if automation_cost > 0:
             expected_roi = round((cost_savings / automation_cost) * 100, 2)
@@ -470,8 +474,8 @@ class TestExportROICSV:
         response_org1 = admin_client.get(url, data=build_export_query("roi", organization=[1]))
         assert response_all.status_code == 200
         assert response_org1.status_code == 200
-        savings_all = float(parse_csv(response_all.content)[1][0])
-        savings_org1 = float(parse_csv(response_org1.content)[1][0])
+        savings_all = float(currency_to_decimal(parse_csv(response_all.content)[1][0]))
+        savings_org1 = float(currency_to_decimal(parse_csv(response_org1.content)[1][0]))
         assert savings_org1 < savings_all
 
 

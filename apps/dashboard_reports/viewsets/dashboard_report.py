@@ -674,6 +674,11 @@ class DashboardReportViewSet(ReadOnlyModelViewSet):
             return f"'{value}"
         return value
 
+    @staticmethod
+    def _format_currency(value: decimal.Decimal | float) -> str:
+        round_value = round(value, 2)
+        return f"${round_value:,.2f}" if round_value >= 0 else f"-${abs(round_value):,.2f}"
+
     def _write_summary_csv(self, response: HttpResponse, qs: QuerySet[JobData]) -> None:
         """
         Write summary data to CSV, including template name, number of job executions,
@@ -716,9 +721,9 @@ class DashboardReportViewSet(ReadOnlyModelViewSet):
             row += [
                 job["elapsed"],
                 sec2time(job["elapsed"]),
-                round(job["automated_costs"], 2),
-                round(job["manual_costs"], 2),
-                round(job["savings"], 2),
+                self._format_currency(job["automated_costs"]),
+                self._format_currency(job["manual_costs"]),
+                self._format_currency(job["savings"]),
             ]
             writer.writerow(row)
 
@@ -754,12 +759,12 @@ class DashboardReportViewSet(ReadOnlyModelViewSet):
         )
         writer.writerow(
             [
-                round(savings, 2),
+                self._format_currency(savings),
                 time_saved_hours,
-                round(automated_costs, 2),
-                round(manual_costs, 2),
+                self._format_currency(automated_costs),
+                self._format_currency(manual_costs),
                 roi_percentage,
-                round(automation_value, 2),
+                self._format_currency(automation_value),
             ]
         )
 
