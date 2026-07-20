@@ -7,6 +7,7 @@ End-to-end performance benchmarks for the automation dashboard data collection p
 | `fill_data.py` | Populates the AWX database with synthetic test data |
 | `benchmark_dashboard_collection.py` | Internal benchmark — calls `_collect_data()` directly in Python |
 | `benchmark_dashboard_api.py` | API benchmark — triggers tasks via `POST /api/v1/tasks/schedule_immediate/` |
+| `prometheus_utils.py` | Shared Prometheus `/metrics` helpers used by the API benchmarks |
 
 ---
 
@@ -75,7 +76,7 @@ export METRICS_UTILITY_DB_PASSWORD=<awx-db-password>
 
 # General
 export METRICS_SERVICE_LOG_LEVEL=WARNING
-export METRICS_SERVICE_FEATURE_ENABLED__DASHBOARD_COLLECTION=true
+export METRICS_SERVICE_FEATURE__DASHBOARD_COLLECTION=true
 ```
 
 If `metrics-utility` is not checked out as a sibling of `metrics-service` (at `../metrics-utility`
@@ -328,7 +329,7 @@ PASSWORD=<password> \
 
 | Variable      | Default      | Description                                                 |
 |---------------|--------------|-------------------------------------------------------------|
-| `BASE_URL`    | `http://localhost:8000/api` | metrics-service API base URL          |
+| `BASE_URL`    | `http://localhost:18002/api` | metrics-service API base URL          |
 | `BENCHMARK_USER` | `superadmin` | Admin username                                        |
 | `PASSWORD`    | —            | Password for the above user                                 |
 | `METRICS_URL` | —            | Prometheus `/metrics` URL (optional, for server-side stats) |
@@ -377,7 +378,7 @@ Phase 3: One day collection ...
 
 - **postgres not running** — `docker-compose up -d postgres` / `docker-compose ps`
 - **`JobData` table missing** — run `python manage.py migrate`
-- **Feature flag error** — verify `METRICS_SERVICE_FEATURE_ENABLED__DASHBOARD_COLLECTION=true`
+- **Feature flag error** — verify `METRICS_SERVICE_FEATURE__DASHBOARD_COLLECTION=true`
 - **`fill_data.py` — scripts directory not found** — set `METRICS_UTILITY_PATH` to your `metrics-utility` checkout
 - **401 Unauthorized (API benchmark)** — wrong `BENCHMARK_USER` / `PASSWORD`; user must be a superuser
 - **Task stays pending (API benchmark)** — dispatcherd is not running
