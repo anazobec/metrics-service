@@ -701,6 +701,7 @@ class DashboardReportViewSet(ReadOnlyModelViewSet):
         headers += [
             "Running time (seconds)",
             "Running time",
+            "Time Saved (hours)",
             "Automated costs",
             "Manual costs",
             "Savings",
@@ -721,6 +722,7 @@ class DashboardReportViewSet(ReadOnlyModelViewSet):
             row += [
                 job["elapsed"],
                 sec2time(job["elapsed"]),
+                round(job["time_savings"] / 3600, 2),
                 self._format_currency(job["automated_costs"]),
                 self._format_currency(job["manual_costs"]),
                 self._format_currency(job["savings"]),

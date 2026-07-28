@@ -297,6 +297,7 @@ class TestExportSummaryCSV:
             "Time taken to create automation (minutes)",
             "Running time (seconds)",
             "Running time",
+            "Time Saved (hours)",
             "Automated costs",
             "Manual costs",
             "Savings",
@@ -356,6 +357,20 @@ class TestExportSummaryCSV:
         assert response.status_code == 200
         rows = parse_csv(response.content)
         assert rows[1][2] == "20"
+
+    def test_summary_data_row_time_saved(self, job_data, admin_client):
+        """
+        Template A: manual_time = 2 runs * 240 min * 60 = 28800s, elapsed = 60 + 5 = 65s,
+        creation_time_deduction = 40 min * 60 = 2400s (creation time included by default).
+        time_savings = 28800 - 65 - 2400 = 26335s -> 26335 / 3600 = 7.32h.
+        """
+        url = reverse("dashboard_reports:report-export")
+        response = admin_client.get(url, data=build_export_query("summary", days_back=7))
+        assert response.status_code == 200
+        rows = parse_csv(response.content)
+        header = rows[0]
+        time_saved_index = header.index("Time Saved (hours)")
+        assert rows[1][time_saved_index] == "7.32"
 
     def test_summary_organization_filter(self, job_data, admin_client):
         """Filtering by organization=1 should return only Template A."""
