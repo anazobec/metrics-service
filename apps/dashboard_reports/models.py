@@ -446,10 +446,8 @@ class TemplateMetadata(CommonModel):
         """
         update_fields = []
         if elapsed is not None and instance.time_taken_manually_execute_minutes is None:
-            # Default: 2× the elapsed time, capped between 30 and 1,000,000 minutes.
-            estimated = max(
-                int(decimal.Decimal(elapsed / 60 * 2).quantize(decimal.Decimal(1), rounding=decimal.ROUND_UP)), 30
-            )
+            # Default: 2× the elapsed time.
+            estimated = int(decimal.Decimal(elapsed / 60 * 2).quantize(decimal.Decimal(1), rounding=decimal.ROUND_UP))
             instance.time_taken_manually_execute_minutes = min(estimated, 1_000_000)
             update_fields.append("time_taken_manually_execute_minutes")
         if instance.time_taken_create_automation_minutes is None:

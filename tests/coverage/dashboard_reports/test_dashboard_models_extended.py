@@ -491,16 +491,16 @@ def test_apply_time_estimate_defaults_already_set():
 
 @pytest.mark.unit
 @pytest.mark.django_db
-def test_apply_time_estimate_defaults_capped_at_minimum():
-    """Very short elapsed → manual estimate is capped at 30 minutes minimum."""
+def test_apply_time_estimate_defaults_short_elapsed_no_floor():
+    """Very short elapsed → manual estimate is a pure 2x calculation, with no artificial floor."""
     from apps.dashboard_reports.models import TemplateMetadata
 
-    tm = TemplateMetadata.objects.create(template_name="defaults-min-cap", template_id=8891)
+    tm = TemplateMetadata.objects.create(template_name="defaults-short-elapsed", template_id=8891)
     tm.time_taken_manually_execute_minutes = None
     tm.time_taken_create_automation_minutes = None
-    # 10 seconds elapsed → 2× / 60 = 0.33 minutes → capped at 30
+    # 10 seconds elapsed → 2x / 60 = 0.33 minutes → rounded up to 1, no 30-minute floor applied
     TemplateMetadata._apply_time_estimate_defaults(tm, elapsed=decimal.Decimal("10"))
-    assert tm.time_taken_manually_execute_minutes == 30
+    assert tm.time_taken_manually_execute_minutes == 1
 
 
 @pytest.mark.unit
