@@ -859,9 +859,6 @@ class DashboardReportViewSet(ReadOnlyModelViewSet):
         # CustomReportFilter's custom manager methods are not called on a ValuesQuerySet.
         qs = self._build_aggregated_queryset(filtered_qs)
         report_data_qs = qs.aggregate(
-            total_runs=Coalesce(Sum("runs"), Value(0)),
-            total_successful_runs=Coalesce(Sum("successful_runs"), Value(0)),
-            total_failed_runs=Coalesce(Sum("failed_runs"), Value(0)),
             total_num_hosts=Coalesce(Sum("num_hosts"), Value(0)),
             total_elapsed=Coalesce(Sum("elapsed"), Value(decimal.Decimal("0"))),
             total_manual_time=Coalesce(Sum("manual_time"), Value(0)),
@@ -870,6 +867,18 @@ class DashboardReportViewSet(ReadOnlyModelViewSet):
             total_savings=Coalesce(Sum("savings"), Value(decimal.Decimal("0"))),
             total_time_savings=Coalesce(Sum("time_savings"), Value(decimal.Decimal("0"))),
         )
+
+        # Card counts (total_runs/successful/failed) are computed directly on filtered_qs
+        # instead of via _build_aggregated_queryset, because that method drops rows with
+        # template_metadata_id=NULL (needed for cost/time annotations). Counting on the raw
+        # filtered queryset keeps the summary cards consistent with the unfiltered job listing
+        # (AAP-85129).
+        card_counts = filtered_qs.aggregate(
+            total_runs=Coalesce(Count("id"), Value(0)),
+            total_successful_runs=Coalesce(Count("id", filter=Q(status=JobStatusChoices.SUCCESSFUL)), Value(0)),
+            total_failed_runs=Coalesce(Count("id", filter=Q(status=JobStatusChoices.FAILED)), Value(0)),
+        )
+        report_data_qs.update(card_counts)
 
         ### Unique hosts count ###
         # Use a stable surrogate key that prefers host_id (cast to text) when present and

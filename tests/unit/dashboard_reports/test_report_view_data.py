@@ -955,6 +955,37 @@ class TestDashboardReportViewSetEndpoints:
         assert data["total_number_of_failed_jobs"] == 1
         assert data["total_number_of_host_job_runs"] == 20
 
+    def test_details_aggregation_includes_jobs_without_template_metadata(self, job_data, admin_client):
+        """Regression test for AAP-85129: card totals must count jobs whose template_metadata
+        could not be resolved (template_metadata=None), otherwise the summary cards undercount
+        relative to the raw job listing. The per-template breakdown (list endpoint) still
+        excludes these rows, since it groups by template_metadata_id.
+        """
+        now = get_now()
+        JobData.objects.create(
+            job_id=999,
+            template_name="orphan-template",
+            template_id=None,
+            organization_id=1,
+            status=JobStatusChoices.SUCCESSFUL,
+            started=now - datetime.timedelta(minutes=15),
+            finished=now - datetime.timedelta(minutes=10),
+            elapsed=120,
+            num_hosts=5,
+            template_metadata=None,
+        )
+
+        response = admin_client.get(
+            reverse("v1:report-details"),
+            data=build_recent_query(),
+        )
+        assert response.status_code == 200
+        data = response.data
+        # job_id 1 and 2 (both Template A) plus the new orphan row = 3 runs, 2 successful, 1 failed.
+        assert data["total_number_of_job_runs"] == 3
+        assert data["total_number_of_successful_jobs"] == 2
+        assert data["total_number_of_failed_jobs"] == 1
+
     def test_details_chart_structure(self, job_data, admin_client):
         response = admin_client.get(
             reverse("v1:report-details"),
