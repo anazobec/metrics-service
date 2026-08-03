@@ -11,6 +11,11 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Per-query GROUP BY clauses, kept separate from the AWXQuery SELECT literals so that
+# fetch_data_from_db can compose WHERE / GROUP BY / ORDER BY in valid SQL order
+# (WHERE and GROUP BY must precede ORDER BY, and WHERE must precede GROUP BY).
+GROUP_BY_CLAUSES: dict["AWXQuery", str] = {}
+
 
 class AWXQuery(enum.Enum):
     """Enumeration of allowed AWX read-only SELECT queries."""
@@ -26,7 +31,12 @@ class AWXQuery(enum.Enum):
         "FROM main_unifiedjobtemplate ujt "
         "JOIN main_project pj on pj.unifiedjobtemplate_ptr_id = ujt.id"
     )
-    LABELS = "SELECT id, name FROM main_label"
+    # Labels are organization-scoped in AWX: the same label name can exist as multiple rows
+    # with different ids across organizations. GROUP BY name collapses those into one row per
+    # name, picking the smallest id as the canonical representative (see AAP-85133). The GROUP BY
+    # is deliberately kept out of the SELECT literal itself (see GROUP_BY_CLAUSES below) so that
+    # fetch_data_from_db can insert WHERE/GROUP BY/ORDER BY clauses in valid SQL order.
+    LABELS = "SELECT MIN(id) as id, name FROM main_label"
 
     RETENTION_SETTINGS = (
         "SELECT "
@@ -44,6 +54,10 @@ class AWXQuery(enum.Enum):
         "ON s.unified_job_template_id = ujt.id "
         "WHERE sjt.job_type IN ('cleanup_jobs', 'cleanup_activitystream')"
     )
+
+
+# Registered after the enum body so members exist; maps queries needing GROUP BY to their clause.
+GROUP_BY_CLAUSES[AWXQuery.LABELS] = " GROUP BY name"
 
 
 def _build_where_clause(join_alias: str, search_str: str | None, pk: Any) -> tuple[str, list[Any]]:
@@ -97,15 +111,17 @@ def fetch_data_from_db(awx_query: AWXQuery, join_alias: str = "", **kwargs: Any)
 
     base_query = awx_query.value
     where_clause, params = _build_where_clause(join_alias, search_str, pk)
+    group_by_clause = GROUP_BY_CLAUSES.get(awx_query, "")
     order_clause = f" ORDER BY {join_alias}name"
 
     if limit is not None:
-        count_query = f"SELECT COUNT(*) FROM ({base_query}{where_clause}) AS _count_subq"  # noqa: S608 base_query is an AWXQuery enum value (hardcoded literal); where_clause uses %s placeholders
+        # WHERE must precede GROUP BY, which must precede ORDER BY/LIMIT — see GROUP_BY_CLAUSES.
+        count_query = f"SELECT COUNT(*) FROM ({base_query}{where_clause}{group_by_clause}) AS _count_subq"  # noqa: S608 base_query is an AWXQuery enum value (hardcoded literal); where_clause uses %s placeholders
         total = _execute_count_query(db_connection, count_query, params)
-        query = base_query + where_clause + order_clause + " LIMIT %s OFFSET %s"
+        query = base_query + where_clause + group_by_clause + order_clause + " LIMIT %s OFFSET %s"
         _, data = _execute_db_query(db_connection, query, params + [limit, offset])
     else:
-        query = base_query + where_clause + order_clause
+        query = base_query + where_clause + group_by_clause + order_clause
         _, data = _execute_db_query(db_connection, query, params)
         total = len(data)
 

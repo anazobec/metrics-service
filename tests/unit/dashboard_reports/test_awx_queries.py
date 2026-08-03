@@ -167,3 +167,59 @@ class TestAWXQueries:
         items, total = awx_queries.fetch_labels(db_connection=MagicMock())
         assert items == [{"id": 4, "name": "Lbl"}]
         assert total == 1
+
+    def test_labels_query_has_no_inline_group_by(self):
+        """GROUP BY must not be baked into the LABELS SELECT literal, or WHERE clauses appended by
+        fetch_data_from_db would land after it, producing invalid SQL. See AAP-85133."""
+        assert "GROUP BY" not in AWXQuery.LABELS.value
+        assert awx_queries.GROUP_BY_CLAUSES[AWXQuery.LABELS] == " GROUP BY name"
+
+    @patch("apps.dashboard_reports.awx_queries._execute_db_query")
+    def test_fetch_data_from_db_labels_search_orders_where_before_group_by(self, mock_exec):
+        """Regression test: searching labels must produce 'WHERE ... GROUP BY ... ORDER BY',
+        not 'GROUP BY ... WHERE ...' (invalid SQL)."""
+        mock_exec.return_value = (["id", "name"], [(1, "labelTest1")])
+        db_conn = MagicMock()
+
+        awx_queries.fetch_data_from_db(
+            AWXQuery.LABELS, join_alias="", db_connection=db_conn, search_str="label", pk=None
+        )
+
+        executed_query = mock_exec.call_args[0][1]
+        where_pos = executed_query.index("WHERE")
+        group_by_pos = executed_query.index("GROUP BY")
+        order_by_pos = executed_query.index("ORDER BY")
+        assert where_pos < group_by_pos < order_by_pos
+
+    @patch("apps.dashboard_reports.awx_queries._execute_count_query")
+    @patch("apps.dashboard_reports.awx_queries._execute_db_query")
+    def test_fetch_data_from_db_labels_with_limit_and_search_dedupes(self, mock_exec, mock_count):
+        """Paginated label search (the code path hit by the API list endpoint) must also compose
+        valid SQL with WHERE before GROUP BY, in both the COUNT subquery and the main query."""
+        mock_count.return_value = 1
+        mock_exec.return_value = (["id", "name"], [(5, "labelTest1")])
+        db_conn = MagicMock()
+
+        rows, total = awx_queries.fetch_data_from_db(
+            AWXQuery.LABELS, join_alias="", db_connection=db_conn, search_str="label", limit=10, offset=0
+        )
+
+        assert rows == [(5, "labelTest1")]
+        assert total == 1
+        count_query = mock_count.call_args[0][1]
+        assert count_query.index("WHERE") < count_query.index("GROUP BY")
+        main_query = mock_exec.call_args[0][1]
+        assert main_query.index("WHERE") < main_query.index("GROUP BY") < main_query.index("ORDER BY")
+
+    @patch("apps.dashboard_reports.awx_queries._execute_db_query")
+    def test_fetch_data_from_db_labels_dedupe_by_name(self, mock_exec):
+        """MIN(id) GROUP BY name should return one canonical row per label name."""
+        mock_exec.return_value = (["id", "name"], [(5, "labelTest1")])
+        db_conn = MagicMock()
+
+        rows, _ = awx_queries.fetch_data_from_db(AWXQuery.LABELS, join_alias="", db_connection=db_conn)
+
+        executed_query = mock_exec.call_args[0][1]
+        assert "MIN(id)" in executed_query
+        assert "GROUP BY name" in executed_query
+        assert rows == [(5, "labelTest1")]
