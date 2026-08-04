@@ -161,9 +161,86 @@ class TestAWXQueries:
         assert items == [{"id": 3, "name": "Prj"}]
         assert total == 1
 
-    @patch("apps.dashboard_reports.awx_queries.fetch_id_name")
-    def test_fetch_labels(self, mock_fetch):
-        mock_fetch.return_value = ([{"id": 4, "name": "Lbl"}], 1)
+    def test_format_label_rows_unique_names(self):
+        rows = [(1, "Lbl", "OrgA"), (2, "Other", "OrgB")]
+        result = awx_queries.format_label_rows(rows, duplicate_names=set())
+        assert result == [{"id": 1, "name": "Lbl"}, {"id": 2, "name": "Other"}]
+
+    def test_format_label_rows_disambiguates_duplicates(self):
+        rows = [(1, "prod", "OrgA"), (2, "prod", "OrgB"), (3, "prod", "OrgC"), (4, "staging", "OrgA")]
+        result = awx_queries.format_label_rows(rows, duplicate_names={"prod"})
+        assert result == [
+            {"id": 1, "name": "prod (OrgA)"},
+            {"id": 2, "name": "prod (OrgB)"},
+            {"id": 3, "name": "prod (OrgC)"},
+            {"id": 4, "name": "staging"},
+        ]
+
+    def test_format_label_rows_uses_provided_duplicate_names_not_page_contents(self):
+        """A single-row page must still be disambiguated if its name is a known duplicate overall."""
+        rows = [(2, "prod", "OrgB")]
+        result = awx_queries.format_label_rows(rows, duplicate_names={"prod"})
+        assert result == [{"id": 2, "name": "prod (OrgB)"}]
+
+    @patch("apps.dashboard_reports.awx_queries._fetch_duplicate_label_names")
+    @patch("apps.dashboard_reports.awx_queries.fetch_data_from_db")
+    def test_fetch_labels(self, mock_fetch, mock_dupes):
+        mock_fetch.return_value = ([(4, "Lbl", "OrgA")], 1)
+        mock_dupes.return_value = set()
         items, total = awx_queries.fetch_labels(db_connection=MagicMock())
         assert items == [{"id": 4, "name": "Lbl"}]
         assert total == 1
+
+    @patch("apps.dashboard_reports.awx_queries._fetch_duplicate_label_names")
+    @patch("apps.dashboard_reports.awx_queries.fetch_data_from_db")
+    def test_fetch_labels_dedupes_duplicate_names_by_organization(self, mock_fetch, mock_dupes):
+        mock_fetch.return_value = ([(1, "prod", "OrgA"), (2, "prod", "OrgB")], 2)
+        mock_dupes.return_value = {"prod"}
+        items, total = awx_queries.fetch_labels(db_connection=MagicMock())
+        assert items == [{"id": 1, "name": "prod (OrgA)"}, {"id": 2, "name": "prod (OrgB)"}]
+        assert total == 2
+
+    @patch("apps.dashboard_reports.awx_queries._fetch_duplicate_label_names")
+    @patch("apps.dashboard_reports.awx_queries.fetch_data_from_db")
+    def test_fetch_labels_dedupe_stays_consistent_across_pages(self, mock_fetch, mock_dupes):
+        """Regression test: a duplicate name split across pages (limit=1) must be disambiguated on
+        every page, since duplicate detection is computed from the full dataset, not the page."""
+        mock_dupes.return_value = {"prod"}
+
+        mock_fetch.return_value = ([(1, "prod", "OrgA")], 2)
+        page_one, total_one = awx_queries.fetch_labels(db_connection=MagicMock(), limit=1, offset=0)
+        assert page_one == [{"id": 1, "name": "prod (OrgA)"}]
+        assert total_one == 2
+
+        mock_fetch.return_value = ([(2, "prod", "OrgB")], 2)
+        page_two, total_two = awx_queries.fetch_labels(db_connection=MagicMock(), limit=1, offset=1)
+        assert page_two == [{"id": 2, "name": "prod (OrgB)"}]
+        assert total_two == 2
+
+    @patch("apps.dashboard_reports.awx_queries._fetch_duplicate_label_names")
+    @patch("apps.dashboard_reports.awx_queries.fetch_data_from_db")
+    def test_fetch_labels_error(self, mock_fetch, mock_dupes):
+        mock_fetch.side_effect = Exception("fail")
+        with pytest.raises(Exception, match="fail"):
+            awx_queries.fetch_labels(db_connection=MagicMock())
+
+    def test_fetch_duplicate_label_names(self):
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_cursor.fetchall.return_value = [("prod",)]
+        mock_conn.cursor.return_value = mock_cursor
+
+        result = awx_queries._fetch_duplicate_label_names(mock_conn, "l.", None, None)
+
+        assert result == {"prod"}
+        executed_query = mock_cursor.execute.call_args[0][0]
+        assert "GROUP BY name HAVING COUNT(*) > 1" in executed_query
+        assert "LIMIT" not in executed_query
+
+    def test_labels_query_joins_organization(self):
+        """LABELS must join main_organization so org name is available to disambiguate duplicates."""
+        assert "main_label l" in AWXQuery.LABELS.value
+        assert "JOIN main_organization o" in AWXQuery.LABELS.value
+        assert "organization_name" in AWXQuery.LABELS.value

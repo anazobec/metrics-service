@@ -26,7 +26,14 @@ class AWXQuery(enum.Enum):
         "FROM main_unifiedjobtemplate ujt "
         "JOIN main_project pj on pj.unifiedjobtemplate_ptr_id = ujt.id"
     )
-    LABELS = "SELECT id, name FROM main_label"
+    # Labels are organization-scoped in AWX: unique_together = (name, organization), so the same
+    # name can exist as distinct labels (different ids) across organizations. Join organization so
+    # duplicate names can be disambiguated in Python (see format_label_rows / AAP-85133).
+    LABELS = (
+        "SELECT l.id, l.name, o.name AS organization_name "
+        "FROM main_label l "
+        "JOIN main_organization o ON o.id = l.organization_id"
+    )
 
     RETENTION_SETTINGS = (
         "SELECT "
@@ -117,6 +124,41 @@ def format_id_name_rows(rows: list[Any]) -> list[dict[str, Any]]:
     return [{"id": row[0], "name": row[1]} for row in rows]
 
 
+def format_label_rows(rows: list[Any], duplicate_names: set[str]) -> list[dict[str, Any]]:
+    """
+    Format label rows ``(id, name, organization_name)`` as list of dicts with 'id' and 'name' keys.
+
+    Labels are organization-scoped in AWX (unique by name + organization), so the same name can
+    legitimately belong to distinct labels in different organizations. Names present in
+    ``duplicate_names`` are disambiguated by appending the organization name in parentheses
+    (e.g. "production (Org A)", "production (Org B)"). ``duplicate_names`` must be computed from the
+    complete matching dataset (not just the current page) so that a name split across pages is
+    still disambiguated consistently on every page. Labels with a unique name are left unchanged.
+    """
+    items = []
+    for row_id, name, organization_name in rows:
+        display_name = f"{name} ({organization_name})" if name in duplicate_names else name
+        items.append({"id": row_id, "name": display_name})
+    return items
+
+
+def _fetch_duplicate_label_names(db_connection, join_alias: str, search_str: str | None, pk: Any) -> set[str]:
+    """
+    Return the set of label names that occur more than once across the *complete* matching dataset.
+
+    Uses the same WHERE filters (search/pk) as the main label query but ignores LIMIT/OFFSET, so
+    that duplicate detection is correct even when results are paginated.
+    """
+    where_clause, params = _build_where_clause(join_alias, search_str, pk)
+    query = (
+        f"SELECT name FROM ({AWXQuery.LABELS.value}{where_clause}) AS _dup_subq "  # noqa: S608 AWXQuery enum value is hardcoded; where_clause uses %s placeholders
+        "GROUP BY name HAVING COUNT(*) > 1"
+    )
+    with db_connection.cursor() as cursor:
+        cursor.execute(query, params)
+        return {row[0] for row in cursor.fetchall()}
+
+
 def fetch_id_name(
     awx_query: AWXQuery, join_alias: str = "", error_msg: str = "", **kwargs
 ) -> tuple[list[dict[str, Any]], int]:
@@ -154,8 +196,25 @@ def fetch_projects(**kwargs) -> tuple[list[dict[str, Any]], int]:
 
 
 def fetch_labels(**kwargs) -> tuple[list[dict[str, Any]], int]:
-    """Fetch labels from DB, returning ``(items, total_count)``."""
-    return fetch_id_name(AWXQuery.LABELS, error_msg="Error fetching labels from AWX database", **kwargs)
+    """
+    Fetch labels from DB, returning ``(items, total_count)``.
+
+    Labels are organization-scoped in AWX (unique by name + organization), so the same name can
+    appear as distinct labels across organizations. Duplicate names are disambiguated by appending
+    the organization name, e.g. "production (Org A)", "production (Org B)". Duplicate detection is
+    computed against the full matching dataset (ignoring limit/offset) so a name split across pages
+    is still disambiguated consistently.
+    """
+    join_alias = "l."
+    try:
+        rows, total = fetch_data_from_db(AWXQuery.LABELS, join_alias=join_alias, **kwargs)
+        duplicate_names = _fetch_duplicate_label_names(
+            kwargs.get("db_connection"), join_alias, kwargs.get("search_str"), kwargs.get("pk")
+        )
+    except Exception:
+        logger.exception("Error fetching labels from AWX database")
+        raise
+    return format_label_rows(rows, duplicate_names), total
 
 
 def fetch_retention_settings(**kwargs) -> tuple[list[dict[str, Any]], int]:
