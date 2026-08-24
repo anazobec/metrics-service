@@ -124,6 +124,11 @@ def format_id_name_rows(rows: list[Any]) -> list[dict[str, Any]]:
     return [{"id": row[0], "name": row[1]} for row in rows]
 
 
+def format_org_rows(rows: list[Any]) -> list[dict[str, Any]]:
+    """Format organization rows as list of dicts 'id', 'name', 'owner_id', 'owner_username'"""
+    return [{"id": row[0], "name": row[1], "owner_id": row[2], "owner_username": row[3]} for row in rows]
+
+
 def format_label_rows(rows: list[Any], duplicate_names: set[str]) -> list[dict[str, Any]]:
     """
     Format label rows ``(id, name, organization_name)`` as list of dicts with 'id' and 'name' keys.
@@ -174,6 +179,23 @@ def fetch_id_name(
         logger.exception(error_msg)
         raise
     return format_id_name_rows(rows), total
+
+
+def fetch_org_data(
+    awx_query: AWXQuery, join_alias: str = "", error_msg: str = "", **kwargs
+) -> tuple[list[dict[str, Any]], int]:
+    """
+    Fetch id/name pairs from the AWX database and return ``(items, total_count)``.
+
+    ``total_count`` is the DB-level COUNT when pagination params (``limit``/``offset``) are supplied,
+    or the length of the result set otherwise.  Raises the underlying exception after logging on failure.
+    """
+    try:
+        rows, total = fetch_data_from_db(awx_query, join_alias=join_alias, **kwargs)
+    except Exception:
+        logger.exception(error_msg)
+        raise
+    return format_org_rows(rows), total
 
 
 def fetch_organizations(**kwargs) -> tuple[list[dict[str, Any]], int]:
