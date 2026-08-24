@@ -210,7 +210,7 @@
                                 "schema": {
                                     "type": "array",
                                     "items": {
-                                        "$ref": "#/components/schemas/DashboardCollectionResponse"
+                                        "$ref": "#/components/schemas/DashboardCollectionListResponse"
                                     }
                                 }
                             }
@@ -219,6 +219,54 @@
                     }
                 },
                 "x-ai-description": "List all dashboard reports collection status"
+            },
+            "post": {
+                "operationId": "dashboard_reports_collection_status_create",
+                "description": "Sets the runtime-toggleable show_gamification setting. Requires system admin or auditor permissions. Takes effect immediately without a service restart.",
+                "summary": "Toggle the show_gamification feature flag.",
+                "tags": [
+                    "dashboard_reports"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DashboardCollectionPostRequestRequest"
+                            }
+                        },
+                        "application/x-www-form-urlencoded": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DashboardCollectionPostRequestRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DashboardCollectionPostRequestRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    },
+                    {
+                        "basicAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DashboardCollectionPostResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                },
+                "x-ai-description": "Create new dashboard reports collection status"
             }
         },
         "/api/v1/dashboard_reports/collection_telemetry/": {
@@ -11242,7 +11290,7 @@
                     "name"
                 ]
             },
-            "DashboardCollectionResponse": {
+            "DashboardCollectionListResponse": {
                 "type": "object",
                 "properties": {
                     "enabled": {
@@ -11260,14 +11308,40 @@
                         "type": "string",
                         "format": "date-time",
                         "nullable": true
+                    },
+                    "show_gamification": {
+                        "type": "boolean"
+                    },
+                    "show_dashboard": {
+                        "type": "boolean"
                     }
                 },
                 "required": [
                     "enabled",
                     "initial_collection_status",
                     "min_collection_timestamp",
-                    "next_run"
+                    "next_run",
+                    "show_dashboard",
+                    "show_gamification"
                 ]
+            },
+            "DashboardCollectionPostRequestRequest": {
+                "type": "object",
+                "properties": {
+                    "show_gamification": {
+                        "type": "boolean",
+                        "default": false
+                    }
+                }
+            },
+            "DashboardCollectionPostResponse": {
+                "type": "object",
+                "properties": {
+                    "show_gamification": {
+                        "type": "boolean",
+                        "default": false
+                    }
+                }
             },
             "DashboardReportExportError": {
                 "type": "object",

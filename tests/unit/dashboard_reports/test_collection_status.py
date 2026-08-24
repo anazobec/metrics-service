@@ -1,5 +1,6 @@
 """Unit tests for the DashboardCollectionStatusViewSet."""
 
+import json
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
@@ -14,8 +15,10 @@ PATCH_FLAG = "apps.dashboard_reports.viewsets.collection_status.get_feature_enab
 PATCH_TASK = "apps.dashboard_reports.viewsets.collection_status.Task"
 PATCH_PERM = "ansible_base.rbac.api.permissions.IsSystemAdminOrAuditor.has_permission"
 PATCH_MIN_TS = "apps.dashboard_reports.viewsets.collection_status.JobData.min_timestamp"
+PATCH_SETTING = "apps.dashboard_reports.viewsets.collection_status.Setting"
 factory = APIRequestFactory()
 view = DashboardCollectionStatusViewSet.as_view({"get": "list"})
+create_view = DashboardCollectionStatusViewSet.as_view({"post": "create"})
 
 
 @pytest.mark.unit
@@ -43,6 +46,8 @@ class TestDashboardCollectionStatusViewSet:
             "next_run": None,
             "initial_collection_status": None,
             "min_collection_timestamp": None,
+            "show_gamification": False,
+            "show_dashboard": False,
         }
         mock_task_class.objects.filter.assert_not_called()
 
@@ -85,6 +90,8 @@ class TestDashboardCollectionStatusViewSet:
             "next_run": None,
             "initial_collection_status": None,
             "min_collection_timestamp": None,
+            "show_gamification": True,
+            "show_dashboard": True,
         }
 
     @patch(PATCH_MIN_TS, return_value=datetime(2024, 3, 1, 8, 30, 0, tzinfo=UTC))
@@ -155,9 +162,11 @@ class TestDashboardCollectionStatusViewSet:
         }
 
     def test_permission_class(self):
-        from ansible_base.rbac.api.permissions import IsSystemAdminOrAuditor
+        """The viewset no longer gates all actions via class-level permission_classes;
+        IsSystemAdminOrAuditor is checked manually inside list()/create() instead."""
+        from rest_framework.permissions import IsAuthenticated
 
-        assert IsSystemAdminOrAuditor in DashboardCollectionStatusViewSet.permission_classes
+        assert DashboardCollectionStatusViewSet.permission_classes == [IsAuthenticated]
 
 
 @pytest.mark.unit
@@ -171,3 +180,71 @@ class TestDashboardCollectionStatusURL:
     def test_viewset_registered_in_router(self):
         registered = [reg[1] for reg in router.registry]
         assert DashboardCollectionStatusViewSet in registered
+
+
+@pytest.mark.unit
+class TestDashboardCollectionStatusCreate:
+    """Tests for DashboardCollectionStatusViewSet.create() (POST show_gamification toggle)."""
+
+    def _post(self, data):
+        request = factory.post("/api/v1/dashboard_reports/collection_status/", data, format="json")
+        request.user = MagicMock()
+        return create_view(request)
+
+    @patch(PATCH_PERM, return_value=False)
+    def test_non_admin_forbidden(self, mock_perm):
+        """Non admin/auditor users get 403 and no Setting write is attempted."""
+        with patch(PATCH_SETTING) as mock_setting:
+            response = self._post({"show_gamification": True})
+            mock_setting.objects.update_or_create.assert_not_called()
+        assert response.status_code == 403
+
+    @patch(PATCH_PERM, return_value=True)
+    def test_non_boolean_value_rejected(self, mock_perm):
+        """Non-boolean show_gamification value returns 400 and does not touch the DB."""
+        with patch(PATCH_SETTING) as mock_setting:
+            response = self._post({"show_gamification": "true"})
+            mock_setting.objects.update_or_create.assert_not_called()
+        assert response.status_code == 400
+        assert "show_gamification" in response.data
+
+    @patch(PATCH_PERM, return_value=True)
+    def test_missing_value_rejected(self, mock_perm):
+        """Missing show_gamification key returns 400."""
+        response = self._post({})
+        assert response.status_code == 400
+
+    @patch(PATCH_PERM, return_value=True)
+    def test_sets_flag_true(self, mock_perm):
+        """POST with True persists SHOW_GAMIFICATION=true via update_or_create."""
+        with patch(PATCH_SETTING) as mock_setting:
+            response = self._post({"show_gamification": True})
+            mock_setting.objects.update_or_create.assert_called_once()
+            _, kwargs = mock_setting.objects.update_or_create.call_args
+            assert kwargs["setting_key"] == "SHOW_GAMIFICATION"
+            assert kwargs["defaults"]["current_value"] == json.dumps(True)
+        assert response.status_code == 200
+        assert response.data == {"show_gamification": True}
+
+    @patch(PATCH_PERM, return_value=True)
+    def test_sets_flag_false(self, mock_perm):
+        """POST with False persists SHOW_GAMIFICATION=false via update_or_create."""
+        with patch(PATCH_SETTING) as mock_setting:
+            response = self._post({"show_gamification": False})
+            _, kwargs = mock_setting.objects.update_or_create.call_args
+            assert kwargs["defaults"]["current_value"] == json.dumps(False)
+        assert response.status_code == 200
+        assert response.data == {"show_gamification": False}
+
+    @patch(PATCH_PERM, return_value=True)
+    def test_last_modified_by_set_to_request_user(self, mock_perm):
+        """The requesting user is recorded as last_modified_by."""
+        request = factory.post(
+            "/api/v1/dashboard_reports/collection_status/", {"show_gamification": True}, format="json"
+        )
+        sentinel_user = MagicMock()
+        request.user = sentinel_user
+        with patch(PATCH_SETTING) as mock_setting:
+            create_view(request)
+            _, kwargs = mock_setting.objects.update_or_create.call_args
+            assert kwargs["defaults"]["last_modified_by"] is sentinel_user
