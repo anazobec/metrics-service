@@ -7142,7 +7142,8 @@ paths:
   /api/v1/users/me/:
     get:
       operationId: users_me_retrieve
-      description: Get currently logged in user's details
+      description: Get currently logged in user's details, including a `member_of_organizations`
+        list read live from the gateway API (AAP-88670).
       summary: Get current user details
       tags:
       - users
@@ -7154,7 +7155,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/User'
+                $ref: '#/components/schemas/UserMe'
           description: ''
       x-ai-description: Retrieve single users me
   /health/:
@@ -7866,6 +7867,17 @@ components:
       - name
       - rank
       - runs
+    OrganizationMembership:
+      type: object
+      description: Serializer describing a single organization entry in `member_of_organizations`.
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+      required:
+      - id
+      - name
     OrganizationRequest:
       type: object
       description: Serializer for the Organization model with RBAC access mixin.
@@ -10094,6 +10106,73 @@ components:
         object_role_assignments:
           type: string
           readOnly: true
+      required:
+      - username
+    UserMe:
+      type: object
+      description: Serializer for the `me` action's response, documenting the extra
+        `member_of_organizations` field.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        url:
+          type: string
+          readOnly: true
+        related:
+          type: object
+          additionalProperties:
+            type: string
+          readOnly: true
+        summary_fields:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: {}
+          readOnly: true
+        member_of_organizations:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrganizationMembership'
+          readOnly: true
+        last_login:
+          type: string
+          format: date-time
+          nullable: true
+        is_superuser:
+          type: boolean
+          title: Superuser status
+          description: Designates that this user has all permissions without explicitly
+            assigning them.
+        username:
+          type: string
+          description: Required. 150 characters or fewer. Letters, digits and @/./+/-/_
+            only.
+          pattern: ^[\w.@+-]+$
+          maxLength: 150
+        first_name:
+          type: string
+          maxLength: 150
+        last_name:
+          type: string
+          maxLength: 150
+        email:
+          type: string
+          format: email
+          title: Email address
+          maxLength: 254
+        is_staff:
+          type: boolean
+          title: Staff status
+          description: Designates whether the user can log into this admin site.
+        is_active:
+          type: boolean
+          title: Active
+          description: Designates whether this user should be treated as active. Unselect
+            this instead of deleting accounts.
+        date_joined:
+          type: string
+          format: date-time
       required:
       - username
     UserRequest:

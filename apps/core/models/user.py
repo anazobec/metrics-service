@@ -27,6 +27,20 @@ class User(AbstractDABUser):
             content_type=None,
         ).exists()
 
+    def get_member_organizations(self) -> list[dict]:
+        """Return organizations of which this user is a member, read live from the gateway API.
+
+        Calls the gateway's cross-service role-user-assignments API
+        (``apps.core.gateway_queries``) rather than the local gateway-resource-sync
+        copy (``Organization.access_qs``), to avoid sync lag for org membership
+        (AAP-88670): the gateway is the authoritative source, and
+        ``sync_resources_from_gateway`` only refreshes periodically, so a
+        locally-synced answer could be briefly stale.
+        """
+        from apps.core.gateway_queries import fetch_member_organizations
+
+        return fetch_member_organizations(self.username)
+
     def related_fields(self, request):
         return {}
 

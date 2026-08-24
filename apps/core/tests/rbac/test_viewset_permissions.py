@@ -1,4 +1,5 @@
 import uuid
+from unittest.mock import patch
 
 import pytest
 from ansible_base.rbac.models import RoleDefinition
@@ -65,7 +66,8 @@ class TestNormalUserAccess:
         assert results == []
 
     def test_can_access_me_endpoint(self, user_api_client, rando):
-        r = user_api_client.get("/api/v1/users/me/")
+        with patch("apps.core.gateway_queries.fetch_member_organizations", return_value=[]):
+            r = user_api_client.get("/api/v1/users/me/")
         assert r.status_code == 200
         assert r.data["username"] == rando.username
 
@@ -159,7 +161,8 @@ class TestUsersEndpointRBAC:
 
     def test_basic_user_can_access_me_endpoint(self, user_api_client, rando):
         """The /me action must remain accessible to any authenticated user."""
-        r = user_api_client.get("/api/v1/users/me/")
+        with patch("apps.core.gateway_queries.fetch_member_organizations", return_value=[]):
+            r = user_api_client.get("/api/v1/users/me/")
         assert r.status_code == 200
         assert r.data["username"] == rando.username
 
