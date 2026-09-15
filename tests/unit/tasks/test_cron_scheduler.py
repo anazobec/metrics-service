@@ -145,9 +145,36 @@ class TestPeriodicDatabaseSync:
         # Assert
         mock_execute.assert_not_called()
 
+    @patch("apps.tasks.models.Task")
+    @patch("apps.tasks.utils.awx_db_ready", return_value=True)
+    def test_skips_already_tracked_tasks_across_all_task_types(self, _mock_db_ready, mock_task_model):
+        """Periodic discovery does not reprocess tracked immediate, scheduled, or recurring tasks."""
+        scheduler = UnifiedTaskScheduler()
+        scheduler.running = True
+
+        immediate_task = MagicMock(id=10, task_data={}, is_ready_to_run=MagicMock(return_value=True))
+        scheduled_task = MagicMock(id=11, task_data={})
+        recurring_task = MagicMock(id=12, task_data={})
+        scheduler._db_task_jobs.update({10: "immediate", 11: "scheduled", 12: "recurring"})
+        mock_task_model.immediate_tasks.return_value = [immediate_task]
+        mock_task_model.scheduled_tasks.return_value = [scheduled_task]
+        mock_task_model.recurring_tasks.return_value = [recurring_task]
+
+        with (
+            patch.object(scheduler, "_execute_database_task") as mock_execute,
+            patch.object(scheduler, "_add_database_scheduled_task") as mock_add_scheduled,
+            patch.object(scheduler, "_add_database_recurring_task") as mock_add_recurring,
+        ):
+            scheduler._periodic_database_sync()
+
+        mock_execute.assert_not_called()
+        mock_add_scheduled.assert_not_called()
+        mock_add_recurring.assert_not_called()
+
     @patch("apps.tasks.task_groups.get_feature_enabled_from_db", return_value=False)
     @patch("apps.tasks.models.Task")
-    def test_skips_immediate_task_with_disabled_feature_flag(self, mock_task_model, mock_flag):
+    @patch("apps.tasks.utils.awx_db_ready", return_value=True)
+    def test_skips_immediate_task_with_disabled_feature_flag(self, _mock_db_ready, mock_task_model, mock_flag):
         """Immediate tasks whose feature flag is off are silently skipped."""
         scheduler = UnifiedTaskScheduler()
         scheduler.running = True
@@ -170,7 +197,8 @@ class TestPeriodicDatabaseSync:
 
     @patch("apps.tasks.task_groups.get_feature_enabled_from_db", return_value=False)
     @patch("apps.tasks.models.Task")
-    def test_skips_recurring_task_with_disabled_feature_flag(self, mock_task_model, mock_flag):
+    @patch("apps.tasks.utils.awx_db_ready", return_value=True)
+    def test_skips_recurring_task_with_disabled_feature_flag(self, _mock_db_ready, mock_task_model, mock_flag):
         """Recurring tasks whose feature flag is off are not added to the scheduler."""
         scheduler = UnifiedTaskScheduler()
         scheduler.running = True
@@ -185,6 +213,28 @@ class TestPeriodicDatabaseSync:
         mock_task_model.recurring_tasks.return_value = [mock_task]
 
         with patch.object(scheduler, "_add_database_recurring_task") as mock_add:
+            scheduler._periodic_database_sync()
+
+        mock_add.assert_not_called()
+
+    @patch("apps.tasks.task_groups.get_feature_enabled_from_db", return_value=False)
+    @patch("apps.tasks.models.Task")
+    @patch("apps.tasks.utils.awx_db_ready", return_value=True)
+    def test_skips_scheduled_task_with_disabled_feature_flag(self, _mock_db_ready, mock_task_model, mock_flag):
+        """Scheduled tasks whose feature flag is off are not added to the scheduler."""
+        scheduler = UnifiedTaskScheduler()
+        scheduler.running = True
+
+        mock_task = MagicMock()
+        mock_task.id = 4
+        mock_task.name = "Flagged Scheduled"
+        mock_task.task_data = {"_feature_flag": "DASHBOARD_COLLECTION"}
+
+        mock_task_model.immediate_tasks.return_value = []
+        mock_task_model.scheduled_tasks.return_value = [mock_task]
+        mock_task_model.recurring_tasks.return_value = []
+
+        with patch.object(scheduler, "_add_database_scheduled_task") as mock_add:
             scheduler._periodic_database_sync()
 
         mock_add.assert_not_called()
@@ -413,6 +463,26 @@ class TestSyncDatabaseTasks:
         # Assert
         mock_add_scheduled.assert_called_once_with(mock_scheduled_task)
         mock_add_recurring.assert_called_once_with(mock_recurring_task)
+
+    @patch("apps.tasks.task_groups.get_feature_enabled_from_db", return_value=False)
+    @patch("apps.tasks.models.Task")
+    @patch.object(UnifiedTaskScheduler, "_add_database_scheduled_task")
+    @patch.object(UnifiedTaskScheduler, "_add_database_recurring_task")
+    def test_sync_skips_disabled_tasks_and_reuses_flag_cache(
+        self, mock_add_recurring, mock_add_scheduled, mock_task_model, mock_get_feature
+    ):
+        """Disabled scheduled and recurring tasks share one feature-flag lookup."""
+        scheduler = UnifiedTaskScheduler()
+        scheduled_task = MagicMock(task_data={"_feature_flag": "SHARED_FLAG"})
+        recurring_task = MagicMock(task_data={"_feature_flag": "SHARED_FLAG"})
+        mock_task_model.scheduled_tasks.return_value = [scheduled_task]
+        mock_task_model.recurring_tasks.return_value = [recurring_task]
+
+        scheduler._sync_database_tasks()
+
+        mock_add_scheduled.assert_not_called()
+        mock_add_recurring.assert_not_called()
+        mock_get_feature.assert_called_once_with("SHARED_FLAG")
 
 
 @pytest.mark.unit

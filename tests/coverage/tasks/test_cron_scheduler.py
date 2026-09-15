@@ -4,7 +4,7 @@ Targets 13.78% → ~90% coverage.
 """
 
 from datetime import timedelta
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from django.utils import timezone
@@ -165,6 +165,23 @@ def test_task_feature_flag_enabled_flag_off(user):
     )
     scheduler = cs.UnifiedTaskScheduler()
     assert scheduler._task_feature_flag_enabled(task) is False
+
+
+@pytest.mark.unit
+def test_task_feature_flag_enabled_reuses_sync_cache():
+    import apps.tasks.cron_scheduler as cs
+
+    scheduler = cs.UnifiedTaskScheduler()
+    task_a = MagicMock(task_data={"_feature_flag": "SHARED_FLAG"})
+    task_b = MagicMock(task_data={"_feature_flag": "SHARED_FLAG"})
+    feature_flags = {}
+
+    with patch("apps.tasks.task_groups.get_feature_enabled_from_db", return_value=True) as mock_get_feature:
+        assert scheduler._task_feature_flag_enabled(task_a, feature_flags) is True
+        assert scheduler._task_feature_flag_enabled(task_b, feature_flags) is True
+
+    mock_get_feature.assert_called_once_with("SHARED_FLAG")
+    assert feature_flags == {"SHARED_FLAG": True}
 
 
 # ---------------------------------------------------------------------------

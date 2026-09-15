@@ -165,14 +165,26 @@ class UnifiedTaskScheduler:
             except Exception as e:
                 logger.exception(f"Error stopping cron scheduler: {str(e)}")
 
-    def _task_feature_flag_enabled(self, task) -> bool:
-        """Return False if the task carries a feature flag that is currently disabled."""
+    def _task_feature_flag_enabled(self, task, feature_flags: dict[str, bool] | None = None) -> bool:
+        """Return False if the task carries a feature flag that is currently disabled.
+
+        ``feature_flags`` is scoped to one scheduler synchronization pass. It avoids
+        resolving the same flag once per task while preserving the uncached default
+        behavior for task execution, where flags must be re-read on every fire.
+        """
         feature_flag = task.task_data.get("_feature_flag") if task.task_data else None
         if not feature_flag:
             return True
+
+        if feature_flags is not None and feature_flag in feature_flags:
+            return feature_flags[feature_flag]
+
         from .task_groups import get_feature_enabled_from_db
 
-        return get_feature_enabled_from_db(feature_flag)
+        enabled = get_feature_enabled_from_db(feature_flag)
+        if feature_flags is not None:
+            feature_flags[feature_flag] = enabled
+        return enabled
 
     def _sync_database_tasks(self):
         """Synchronize database tasks with the scheduler."""
@@ -185,16 +197,17 @@ class UnifiedTaskScheduler:
 
             added_scheduled = 0
             added_recurring = 0
+            feature_flags: dict[str, bool] = {}
 
             # Add scheduled tasks whose feature flag is currently enabled
             for task in scheduled_tasks:
-                if self._task_feature_flag_enabled(task):
+                if self._task_feature_flag_enabled(task, feature_flags):
                     self._add_database_scheduled_task(task)
                     added_scheduled += 1
 
             # Add recurring tasks whose feature flag is currently enabled
             for task in recurring_tasks:
-                if self._task_feature_flag_enabled(task):
+                if self._task_feature_flag_enabled(task, feature_flags):
                     self._add_database_recurring_task(task)
                     added_recurring += 1
 
@@ -237,11 +250,12 @@ class UnifiedTaskScheduler:
             new_immediate = 0
             new_scheduled = 0
             new_recurring = 0
+            feature_flags: dict[str, bool] = {}
 
             # Handle immediate tasks - execute them right away
             for task in immediate_tasks:
                 if task.id not in self._db_task_jobs and task.is_ready_to_run():
-                    if not self._task_feature_flag_enabled(task):
+                    if not self._task_feature_flag_enabled(task, feature_flags):
                         continue
                     logger.info(f"Found new immediate task: {task.name} (ID: {task.id}) - executing now")
                     # Track immediate task to prevent duplicate submissions
@@ -252,7 +266,7 @@ class UnifiedTaskScheduler:
             # Check for new scheduled tasks
             for task in scheduled_tasks:
                 if task.id not in self._db_task_jobs:
-                    if not self._task_feature_flag_enabled(task):
+                    if not self._task_feature_flag_enabled(task, feature_flags):
                         continue
                     logger.info(f"Found new scheduled task: {task.name} (ID: {task.id})")
                     self._add_database_scheduled_task(task)
@@ -261,7 +275,7 @@ class UnifiedTaskScheduler:
             # Check for new recurring tasks
             for task in recurring_tasks:
                 if task.id not in self._db_task_jobs:
-                    if not self._task_feature_flag_enabled(task):
+                    if not self._task_feature_flag_enabled(task, feature_flags):
                         continue
                     logger.info(f"Found new recurring task: {task.name} (ID: {task.id})")
                     self._add_database_recurring_task(task)
