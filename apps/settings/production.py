@@ -203,6 +203,36 @@ validators.append(
     ),
 )
 
+DATABASES__gateway__HOST = ""
+validators.append(
+    Validator(
+        "DATABASES__gateway__HOST",
+        must_exist=True,
+        ne="",
+        messages={"operations": "DATABASES__gateway__HOST must be set."},
+    ),
+)
+
+DATABASES__gateway__USER = ""
+validators.append(
+    Validator(
+        "DATABASES__gateway__USER",
+        must_exist=True,
+        ne="",
+        messages={"operations": "DATABASES__gateway__USER must be set."},
+    ),
+)
+
+DATABASES__gateway__PASSWORD = ""
+validators.append(
+    Validator(
+        "DATABASES__gateway__PASSWORD",
+        must_exist=True,
+        ne="",
+        messages={"operations": "DATABASES__gateway__PASSWORD must be set."},
+    ),
+)
+
 # =============================================================================
 # External Services
 # =============================================================================

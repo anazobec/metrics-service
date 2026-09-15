@@ -23,6 +23,12 @@ DATABASES__default__PASSWORD = "metrics_service"
 DATABASES__awx__HOST = "127.0.0.1"
 DATABASES__awx__PASSWORD = "mypassword"
 
+DATABASES__gateway__HOST = "127.0.0.1"
+DATABASES__gateway__PORT = 5434
+DATABASES__gateway__USER = "gateway"
+DATABASES__gateway__PASSWORD = "gateway"
+DATABASES__gateway__NAME = "gateway"
+
 ALLOWED_HOSTS = ["localhost", "127.0.0.1", "0.0.0.0"]
 
 # Service Configuration

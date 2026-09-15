@@ -117,6 +117,20 @@ DATABASES = {
             "sslmode": "prefer",
         },
     },
+    # Gateway database, read directly to avoid gateway-resource-sync lag for
+    # data that must be fresh (e.g. organization membership, AAP-88670).
+    # Override with METRICS_SERVICE_DATABASES__gateway__HOST, etc.
+    "gateway": {
+        "ENGINE": "django.db.backends.postgresql",
+        "HOST": "",  # require to be set at runtime
+        "PORT": "5432",
+        "USER": "gateway",
+        "PASSWORD": "",  # require to be set at runtime
+        "NAME": "gateway",
+        "OPTIONS": {
+            "sslmode": "prefer",
+        },
+    },
 }
 
 # Feature flag defaults — controlled at runtime via METRICS_SERVICE_FEATURE__<KEY>=value env vars

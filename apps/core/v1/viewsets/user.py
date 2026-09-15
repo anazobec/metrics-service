@@ -7,7 +7,6 @@ from rest_framework.response import Response
 
 from apps.core.models import User
 from apps.core.v1.serializers import UserSerializer
-from apps.dashboard_reports.utils import get_member_organizations
 
 from .base import BaseViewSet
 
@@ -76,10 +75,8 @@ class UserViewSet(BaseViewSet):
     @extend_schema(
         summary="Get current user details",
         description=(
-            "Get currently logged in user's details, including a provisional "
-            "`member_of_organizations` list derived from recent job data (see AAP-88669). "
-            "This is a stand-in until gateway-backed organization membership is available "
-            "and is only computed for the requesting user."
+            "Get currently logged in user's details, including a `member_of_organizations` "
+            "list read live from the gateway database (AAP-88670)."
         ),
         responses={200: UserSerializer},
     )
@@ -87,12 +84,12 @@ class UserViewSet(BaseViewSet):
     def me(self, request):
         """Return the profile of the currently authenticated user, plus their organization membership.
 
-        `member_of_organizations` is derived from JobData (see
-        apps.dashboard_reports.utils.get_member_organizations) as a provisional
-        replacement for gateway-backed membership data (AAP-88669), so it is only
-        populated for the requesting user, not for list/retrieve of other users.
+        `member_of_organizations` comes from ``User.get_member_organizations``, which
+        reads directly from the gateway database (AAP-88670) to avoid gateway-resource-sync
+        lag, so it is only computed for the requesting user here since `me` only ever
+        returns the caller's own profile.
         """
         serializer = self.get_serializer(request.user)
         data = serializer.data
-        data["member_of_organizations"] = get_member_organizations(request.user.pk)
+        data["member_of_organizations"] = request.user.get_member_organizations()
         return Response(data)
