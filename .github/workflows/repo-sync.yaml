@@ -27,6 +27,8 @@ env:
 
 jobs:
   sync:
+    # The workflow is mirrored into the downstream repository; only the upstream source may sync.
+    if: github.repository == 'ansible/metrics-service'
     name: "Sync → ${{ github.event.repository.name }}"
     runs-on: ubuntu-latest
     timeout-minutes: 10
