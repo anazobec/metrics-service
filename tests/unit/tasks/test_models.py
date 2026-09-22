@@ -15,6 +15,27 @@ from apps.tasks.models import Task, TaskExecution
 class TestTaskModel:
     """Edge case tests for Task model"""
 
+    @pytest.mark.parametrize("cron_expression", [None, "", "0 * * * *"])
+    @pytest.mark.parametrize("status", ["pending", "completed"])
+    @pytest.mark.parametrize("delay", [None, -1, 1])
+    def test_scheduling_queries_classify_cron_expressions(self, cron_expression, status, delay):
+        """Null and empty cron values are one-shot tasks; real cron values recur."""
+        task = Task.objects.create(
+            name="Scheduling query task",
+            function_name="hello_world",
+            status=status,
+            cron_expression=cron_expression,
+            scheduled_time=timezone.now() + timedelta(hours=delay) if delay is not None else None,
+        )
+
+        pending = status == "pending"
+        one_shot = cron_expression in (None, "")
+        assert Task.ready_to_run().filter(pk=task.pk).exists() == (
+            pending and one_shot and (delay is None or delay < 0)
+        )
+        assert Task.immediate_tasks().filter(pk=task.pk).exists() == (pending and one_shot and delay is None)
+        assert Task.recurring_tasks().filter(pk=task.pk).exists() == (pending and not one_shot)
+
     def test_task_str_representation(self):
         """Test __str__ method of Task"""
         task = Task.objects.create(name="Test Task", function_name="hello_world")

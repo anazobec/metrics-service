@@ -163,41 +163,57 @@ _INT_FIELDS = ("id", "organization_id", "unified_job_template_id", "launched_by_
 _STRING_FIELDS = ("name", "organization_name", "status", "launched_by_username", "project_name", "label_ids")
 
 
+def _is_nan(value: Any) -> bool:
+    """Return whether a value is a native float NaN requiring JSON normalization."""
+    return isinstance(value, float) and math.isnan(value)
+
+
+def _serialize_dashboard_datetime_fields(row: dict) -> None:
+    for field in ("started", "finished", "created", "modified"):
+        val = row.get(field)
+        if val is not None and hasattr(val, "isoformat"):
+            row[field] = val.isoformat()
+
+
+def _serialize_dashboard_integer_fields(row: dict) -> None:
+    # Pandas upcasts nullable integer columns to float64 when NaN is present.
+    # .where(notna(), other=None) can leave float NaN, so guard before int(nan).
+    for field in _INT_FIELDS:
+        val = row.get(field)
+        if val is None or _is_nan(val):
+            row[field] = None
+        else:
+            row[field] = int(val)
+
+
+def _serialize_dashboard_string_fields(row: dict) -> None:
+    # Entirely missing string columns can also arrive as float NaN from pandas.
+    for field in _STRING_FIELDS:
+        val = row.get(field)
+        if _is_nan(val):
+            row[field] = None
+
+
+def _serialize_dashboard_elapsed(row: dict) -> None:
+    val = row.get("elapsed")
+    if val is None or _is_nan(val):
+        row["elapsed"] = None
+    else:
+        row["elapsed"] = float(val)
+
+
 def _serialize_dashboard_record(row: dict) -> None:
     """Coerce all non-serializable numpy/pandas types to Python natives in-place.
 
     pandas .to_dict("records") preserves numpy dtypes (numpy.int64, numpy.float64) for
     columns with no NaN values. DjangoJSONEncoder does not handle these, so storing raw
-    records in Task.task_data would raise TypeError. This function converts every field
-    that could carry a numpy type before the record is written to the JSONField.
-
-    Nullable FK columns (organization_id, project_id, etc.) are upcast to float64 by pandas
-    when NaN coexists with integers; .where(notna(), other=None) leaves NaN as float nan
-    rather than None, so int(nan) would raise ValueError without the explicit nan guard here.
-
-    Nullable string columns (organization_name, project_name, etc.) can also arrive as
-    float nan from pandas when the entire column contains NaN values; they must be coerced
-    to None to produce valid JSON.
+    records in Task.task_data would raise TypeError. Nullable numeric and string fields
+    are normalized to None when pandas represents missing values as float NaN.
     """
-    for field in ("started", "finished", "created", "modified"):
-        val = row.get(field)
-        if val is not None and hasattr(val, "isoformat"):
-            row[field] = val.isoformat()
-    for field in _INT_FIELDS:
-        val = row.get(field)
-        if val is None or (isinstance(val, float) and math.isnan(val)):
-            row[field] = None
-        else:
-            row[field] = int(val)
-    for field in _STRING_FIELDS:
-        val = row.get(field)
-        if isinstance(val, float) and math.isnan(val):
-            row[field] = None
-    val = row.get("elapsed")
-    if val is None or (isinstance(val, float) and math.isnan(val)):
-        row["elapsed"] = None
-    else:
-        row["elapsed"] = float(val)
+    _serialize_dashboard_datetime_fields(row)
+    _serialize_dashboard_integer_fields(row)
+    _serialize_dashboard_string_fields(row)
+    _serialize_dashboard_elapsed(row)
 
 
 def _serialize_host_summary_record(row: dict) -> dict:
@@ -212,10 +228,10 @@ def _serialize_host_summary_record(row: dict) -> dict:
     result: dict = {}
     for field in ("id", "job_remote_id"):
         val = row.get(field)
-        result[field] = None if (val is None or (isinstance(val, float) and math.isnan(val))) else int(val)
+        result[field] = None if (val is None or _is_nan(val)) else int(val)
     # host_remote_id (AWX column) → host_id (canonical wire/model field name).
     val = row.get("host_remote_id")
-    result["host_id"] = None if (val is None or (isinstance(val, float) and math.isnan(val))) else int(val)
+    result["host_id"] = None if (val is None or _is_nan(val)) else int(val)
     result["host_name"] = str(row["host_name"]) if row.get("host_name") is not None else None
     return result
 

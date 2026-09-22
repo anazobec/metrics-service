@@ -2,7 +2,7 @@
 Task models for metrics_service.
 
 This module contains task-related models: task definitions and executions,
-and FIXME: split out - also models for collects, rollups and anonymized
+and models for collects, rollups, and anonymized metrics.
 """
 
 import logging
@@ -227,18 +227,23 @@ class Task(NamedCommonModel, AuditableModel, StatusTrackingMixin):
         except Exception:
             return "Invalid cron_expression"
 
+    @staticmethod
+    def non_recurring_filter() -> models.Q:
+        """Match both database representations of an absent cron expression."""
+        return models.Q(cron_expression__isnull=True) | models.Q(cron_expression="")
+
     @classmethod
     def ready_to_run(cls):
         """Queryset equivalent of is_ready_to_run() — pending non-recurring tasks whose scheduled_time has passed or is null."""
         return cls.objects.filter(
+            cls.non_recurring_filter(),
             status="pending",
-            cron_expression__isnull=True,
         ).filter(models.Q(scheduled_time__isnull=True) | models.Q(scheduled_time__lte=timezone.now()))
 
     @classmethod
     def immediate_tasks(cls):
         """Pending tasks with no scheduled time and no cron expression (run ASAP)."""
-        return cls.objects.filter(status="pending", scheduled_time__isnull=True, cron_expression__isnull=True)
+        return cls.objects.filter(cls.non_recurring_filter(), status="pending", scheduled_time__isnull=True)
 
     @classmethod
     def scheduled_tasks(cls):
@@ -248,7 +253,7 @@ class Task(NamedCommonModel, AuditableModel, StatusTrackingMixin):
     @classmethod
     def recurring_tasks(cls):
         """Pending tasks driven by a cron expression."""
-        return cls.objects.filter(status="pending", cron_expression__isnull=False)
+        return cls.objects.filter(status="pending").exclude(cls.non_recurring_filter())
 
 
 class TaskExecution(CommonModel, AuditableModel):

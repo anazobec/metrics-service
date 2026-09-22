@@ -220,6 +220,13 @@ class TestOrganizationLeaderboard:
         names = [row["name"] for row in get(authenticated_client)["organization_leaderboard"]["leaderboard"]]
         assert names == ["Alpha", "Zeta"]
 
+    def test_leaderboard_places_unnamed_organizations_after_named_ones(self, authenticated_client):
+        make_job(day(1), org_id=10, org_name=None)
+        make_job(day(1), org_id=11, org_name="Alpha")
+
+        names = [row["name"] for row in get(authenticated_client)["organization_leaderboard"]["leaderboard"]]
+        assert names == ["Alpha", None]
+
     def test_leaderboard_capped_at_10(self, authenticated_client):
         for org_id in range(1, 16):
             make_job(day(1), org_id=org_id, org_name=f"Org {org_id:02d}")

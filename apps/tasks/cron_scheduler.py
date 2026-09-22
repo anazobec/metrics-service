@@ -216,6 +216,44 @@ class UnifiedTaskScheduler:
         except Exception as e:
             logger.exception(f"Error synchronizing database tasks: {e}")
 
+    def _process_immediate_tasks(self, tasks, feature_flags: dict[str, bool]) -> int:
+        """Execute new ready-to-run immediate tasks and return the count handled."""
+        new_immediate = 0
+        for task in tasks:
+            if task.id not in self._db_task_jobs and task.is_ready_to_run():
+                if not self._task_feature_flag_enabled(task, feature_flags):
+                    continue
+                logger.info(f"Found new immediate task: {task.name} (ID: {task.id}) - executing now")
+                # Track immediate task to prevent duplicate submissions
+                self._db_task_jobs[task.id] = f"db_immediate_{task.id}"
+                self._execute_database_task(task.id)
+                new_immediate += 1
+        return new_immediate
+
+    def _process_scheduled_tasks(self, tasks, feature_flags: dict[str, bool]) -> int:
+        """Add new scheduled tasks and return the count handled."""
+        new_scheduled = 0
+        for task in tasks:
+            if task.id not in self._db_task_jobs:
+                if not self._task_feature_flag_enabled(task, feature_flags):
+                    continue
+                logger.info(f"Found new scheduled task: {task.name} (ID: {task.id})")
+                self._add_database_scheduled_task(task)
+                new_scheduled += 1
+        return new_scheduled
+
+    def _process_recurring_tasks(self, tasks, feature_flags: dict[str, bool]) -> int:
+        """Add new recurring tasks and return the count handled."""
+        new_recurring = 0
+        for task in tasks:
+            if task.id not in self._db_task_jobs:
+                if not self._task_feature_flag_enabled(task, feature_flags):
+                    continue
+                logger.info(f"Found new recurring task: {task.name} (ID: {task.id})")
+                self._add_database_recurring_task(task)
+                new_recurring += 1
+        return new_recurring
+
     def _periodic_database_sync(self):
         """Periodically check for new database tasks and add them to the scheduler."""
         close_old_connections()
@@ -246,40 +284,11 @@ class UnifiedTaskScheduler:
             immediate_tasks = Task.immediate_tasks()
             scheduled_tasks = Task.scheduled_tasks()
             recurring_tasks = Task.recurring_tasks()
-
-            new_immediate = 0
-            new_scheduled = 0
-            new_recurring = 0
             feature_flags: dict[str, bool] = {}
 
-            # Handle immediate tasks - execute them right away
-            for task in immediate_tasks:
-                if task.id not in self._db_task_jobs and task.is_ready_to_run():
-                    if not self._task_feature_flag_enabled(task, feature_flags):
-                        continue
-                    logger.info(f"Found new immediate task: {task.name} (ID: {task.id}) - executing now")
-                    # Track immediate task to prevent duplicate submissions
-                    self._db_task_jobs[task.id] = f"db_immediate_{task.id}"
-                    self._execute_database_task(task.id)
-                    new_immediate += 1
-
-            # Check for new scheduled tasks
-            for task in scheduled_tasks:
-                if task.id not in self._db_task_jobs:
-                    if not self._task_feature_flag_enabled(task, feature_flags):
-                        continue
-                    logger.info(f"Found new scheduled task: {task.name} (ID: {task.id})")
-                    self._add_database_scheduled_task(task)
-                    new_scheduled += 1
-
-            # Check for new recurring tasks
-            for task in recurring_tasks:
-                if task.id not in self._db_task_jobs:
-                    if not self._task_feature_flag_enabled(task, feature_flags):
-                        continue
-                    logger.info(f"Found new recurring task: {task.name} (ID: {task.id})")
-                    self._add_database_recurring_task(task)
-                    new_recurring += 1
+            new_immediate = self._process_immediate_tasks(immediate_tasks, feature_flags)
+            new_scheduled = self._process_scheduled_tasks(scheduled_tasks, feature_flags)
+            new_recurring = self._process_recurring_tasks(recurring_tasks, feature_flags)
 
             if new_immediate > 0 or new_scheduled > 0 or new_recurring > 0:
                 logger.info(
@@ -319,10 +328,8 @@ class UnifiedTaskScheduler:
         from .models import Task
         from .tasks_system import _schedule_retry
 
-        retryable = (
-            Task.objects.filter(status="failed")
-            .exclude(attempts__gte=F("max_attempts"))
-            .exclude(cron_expression__isnull=False)
+        retryable = Task.objects.filter(Task.non_recurring_filter(), status="failed").exclude(
+            attempts__gte=F("max_attempts")
         )
 
         for task in retryable:

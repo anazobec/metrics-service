@@ -415,8 +415,6 @@ class TemplateMetadata(CommonModel):
     @classmethod
     def _create_with_race_handling(cls, name: str, awx_id: int | None) -> "TemplateMetadata":
         """Create a TemplateMetadata row, recovering gracefully from concurrent-insert races."""
-        # TODO: Add an integration test covering this concurrent-insert path to verify that
-        # a second worker correctly recovers from the IntegrityError and returns the winning row.
         try:
             # Wrap in a nested savepoint so that a unique-constraint violation only aborts
             # this inner block — not the outer transaction.atomic() on create_or_update_from_awx.

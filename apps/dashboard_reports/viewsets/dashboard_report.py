@@ -389,7 +389,6 @@ class DashboardReportViewSet(ReadOnlyModelViewSet):
     filter_backends = [CustomReportFilter, AliasedOrderingFilter]
 
     # Maximum number of top users/projects to return in details endpoint
-    # TODO: Consider moving to a Django setting if UIs need to configure this value.
     TOP_RESULTS_LIMIT = 5
 
     ordering_fields: list[str] = [
@@ -968,7 +967,5 @@ class DashboardReportViewSet(ReadOnlyModelViewSet):
                 self._write_trends_csv(
                     response, base_qs
                 )  # trends report needs to be based on the filtered but not yet aggregated queryset to group by time periods
-
-        # TODO: handle PDF export (add in another PR)
 
         return response

@@ -24,7 +24,7 @@ class BaseViewSet(AnsibleBaseDjangoAppApiView, viewsets.ModelViewSet):
     ordering_fields = ["id", "created", "modified"]
     ordering = ["id"]
 
-    # FIXME: does django not log exceptions by default?
+    # Keep the exception in task execution logs before DRF builds the response.
     def handle_exception(self, exc: Exception) -> Response:
         """
         Handle exceptions in a standardized way.

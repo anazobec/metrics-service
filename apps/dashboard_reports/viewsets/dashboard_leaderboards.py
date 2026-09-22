@@ -224,6 +224,134 @@ def _streak_series(counts_by_day: dict[date, int], window_dates: list[date]) -> 
     return {"streak": streak, "daily": daily}
 
 
+def _featured_template_stats(successful_runs: models.QuerySet[JobData]) -> dict[str, Any] | None:
+    """Return the most-used successful template and its latest display name."""
+    # Exclude ad-hoc runs and group only by template_id so renames stay one row.
+    # Break ties by id for a deterministic pick. Keep this query separate from
+    # the day/organization rollup: grouping that by template would multiply rows.
+    featured_template = (
+        successful_runs.filter(template_id__isnull=False)
+        .values("template_id")
+        .annotate(run_count=Count("id"))
+        .order_by("-run_count", "template_id")
+        .first()
+    )
+    if not featured_template:
+        return None
+
+    # Names can change mid-window; use the latest name for display, the id for identity.
+    featured_template_name = (
+        successful_runs.filter(template_id=featured_template["template_id"])
+        .order_by("-finished")
+        .values_list("template_name", flat=True)
+        .first()
+    )
+    return {
+        "id": featured_template["template_id"],
+        "name": featured_template_name,
+        "run_count": featured_template["run_count"],
+    }
+
+
+def _build_organization_stats(
+    day_org_rows: list[dict[str, Any]], window_dates: list[date]
+) -> tuple[dict[str, Any] | None, dict[str, Any], int | None]:
+    """Build the organization streak, leaderboard, and current-organization rank."""
+    # Per-organization successful-run totals for the leaderboard and the
+    # busiest org's streak — an in-memory rollup of day_org_rows by org id.
+    # TODO: derive the user's own organization once membership data is
+    # ingested; for now everything org-scoped uses the busiest org.
+    org_totals: dict[int, dict[str, Any]] = {}
+    for row in day_org_rows:
+        org_id = row["organization_id"]
+        if org_id is None:
+            continue
+        agg = org_totals.setdefault(
+            org_id, {"organization_id": org_id, "organization_name": row["organization_name"], "runs": 0}
+        )
+        agg["runs"] += row["runs"]
+
+    # -runs, then name (NULL last), then id — a deterministic total order.
+    org_rows = sorted(
+        org_totals.values(),
+        key=lambda row: (
+            -row["runs"],
+            row["organization_name"] is None,
+            row["organization_name"] or "",
+            row["organization_id"],
+        ),
+    )
+    top_org = org_rows[0] if org_rows else None
+
+    if top_org:
+        top_org_by_day: dict[date, int] = defaultdict(int)
+        for row in day_org_rows:
+            if row["organization_id"] == top_org["organization_id"]:
+                top_org_by_day[row["day"]] += row["runs"]
+        org_streak: dict[str, Any] | None = {
+            "organization": {
+                "id": top_org["organization_id"],
+                "name": top_org["organization_name"],
+                "run_count": top_org["runs"],
+            },
+            **_streak_series(top_org_by_day, window_dates),
+        }
+    else:
+        org_streak = None
+
+    # Rank of the user's org in the leaderboard. While ``top_org`` is the
+    # busiest org this is always 1; the lookup stays generic so it keeps
+    # working once ``top_org`` becomes the user's actual (owned) org.
+    user_organization_rank = (
+        next(rank for rank, row in enumerate(org_rows, start=1) if row["organization_id"] == top_org["organization_id"])
+        if top_org
+        else None
+    )
+    organization_leaderboard = {
+        "user_organization_rank": user_organization_rank,
+        "total_organizations": len(org_rows),
+        "leaderboard": [
+            {"rank": rank, "name": row["organization_name"], "runs": row["runs"]}
+            for rank, row in enumerate(org_rows[:10], start=1)
+        ],
+    }
+    return org_streak, organization_leaderboard, user_organization_rank
+
+
+def _build_activity_levels(
+    successful_runs: models.QuerySet[JobData], current_user_id: int | None
+) -> list[dict[str, Any]]:
+    """Build the volume, breadth, and consistency activity leaderboards."""
+    per_user_rows = (
+        successful_runs.filter(launched_by_id__isnull=False)
+        .order_by()
+        .values("launched_by_id")
+        .annotate(
+            volume=Count("id"),  # total successful runs
+            breadth=Count("template_id", distinct=True),  # distinct templates
+            consistency=Count(TruncDate("finished", tzinfo=UTC), distinct=True),  # active days
+        )
+    )
+    ranked_by_metric = {
+        metric: sorted(per_user_rows, key=lambda row, metric=metric: (-row[metric], row["launched_by_id"]))
+        for metric in ("volume", "breadth", "consistency")
+    }
+    # Latest known username, fetched only for the ids that actually surface in
+    # a top 10 (<= 30) — identity and ranking are by id, this is display only.
+    # An empty ``visible_ids`` makes ``__in`` a no-op (no query).
+    visible_ids = {row["launched_by_id"] for ranked in ranked_by_metric.values() for row in ranked[:10]}
+    usernames_by_id: dict[int, str | None] = dict(
+        successful_runs.filter(launched_by_id__in=visible_ids)
+        .order_by("launched_by_id", "-finished")
+        .distinct("launched_by_id")
+        .values_list("launched_by_id", "launched_by_username")
+    )
+    return [
+        _activity_level(metric, ranked_by_metric[metric], usernames_by_id, current_user_id)
+        for metric in ("volume", "breadth", "consistency")
+    ]
+
+
 class DashboardLeaderboardsViewSet(ReadOnlyModelViewSet):
     """Aggregated engagement metrics (counts, streaks, leaderboards, achievements).
 
@@ -291,37 +419,7 @@ class DashboardLeaderboardsViewSet(ReadOnlyModelViewSet):
             ),
         }
 
-        # Featured template: most-used job template by successful run count in the
-        # last 30 days. Ad-hoc runs (no template) are excluded, like breadth and
-        # explorer. Keyed purely on template_id — so a template renamed mid-window
-        # stays one row — with ties broken by id for a deterministic pick. Its own
-        # query — folding template into the group above would multiply the row
-        # count.
-        featured_template = (
-            successful_runs.filter(template_id__isnull=False)
-            .values("template_id")
-            .annotate(run_count=Count("id"))
-            .order_by("-run_count", "template_id")
-            .first()
-        )
-
-        if featured_template:
-            # Latest known name for that id — the denormalized template_name
-            # drifts on rename, so take the most recent one (display only;
-            # identity is the id).
-            featured_template_name = (
-                successful_runs.filter(template_id=featured_template["template_id"])
-                .order_by("-finished")
-                .values_list("template_name", flat=True)
-                .first()
-            )
-            stats["featured_template"] = {
-                "id": featured_template["template_id"],
-                "name": featured_template_name,
-                "run_count": featured_template["run_count"],
-            }
-        else:
-            stats["featured_template"] = None
+        stats["featured_template"] = _featured_template_stats(successful_runs)
 
         # Enterprise automation streak: per-day totals across every org (runs with
         # no org included), platform-wide.
@@ -330,63 +428,11 @@ class DashboardLeaderboardsViewSet(ReadOnlyModelViewSet):
             enterprise_by_day[row["day"]] += row["runs"]
         stats["enterprise_streak"] = _streak_series(enterprise_by_day, window_dates)
 
-        # Per-organization successful-run totals for the leaderboard and the
-        # busiest org's streak — an in-memory rollup of day_org_rows by org id.
-        # TODO: derive the user's own organization once membership data is
-        # ingested; for now everything org-scoped uses the busiest org.
-        org_totals: dict[int, dict[str, Any]] = {}
-        for row in day_org_rows:
-            org_id = row["organization_id"]
-            if org_id is None:
-                continue
-            agg = org_totals.setdefault(
-                org_id, {"organization_id": org_id, "organization_name": row["organization_name"], "runs": 0}
-            )
-            agg["runs"] += row["runs"]
-        # -runs, then name (NULL last), then id — a deterministic total order.
-        org_rows = sorted(
-            org_totals.values(),
-            key=lambda row: (-row["runs"], row["organization_name"] or "", row["organization_id"]),
+        org_streak, organization_leaderboard, user_organization_rank = _build_organization_stats(
+            day_org_rows, window_dates
         )
-        top_org = org_rows[0] if org_rows else None
-
-        if top_org:
-            top_org_by_day: dict[date, int] = defaultdict(int)
-            for row in day_org_rows:
-                if row["organization_id"] == top_org["organization_id"]:
-                    top_org_by_day[row["day"]] += row["runs"]
-            org_streak: dict[str, Any] | None = {
-                "organization": {
-                    "id": top_org["organization_id"],
-                    "name": top_org["organization_name"],
-                    "run_count": top_org["runs"],
-                },
-                **_streak_series(top_org_by_day, window_dates),
-            }
-        else:
-            org_streak = None
         stats["org_streak"] = org_streak
-
-        # Rank of the user's org in the leaderboard. While ``top_org`` is the
-        # busiest org this is always 1; the lookup stays generic so it keeps
-        # working once ``top_org`` becomes the user's actual (owned) org.
-        user_organization_rank = (
-            next(
-                rank
-                for rank, row in enumerate(org_rows, start=1)
-                if row["organization_id"] == top_org["organization_id"]
-            )
-            if top_org
-            else None
-        )
-        stats["organization_leaderboard"] = {
-            "user_organization_rank": user_organization_rank,
-            "total_organizations": len(org_rows),
-            "leaderboard": [
-                {"rank": rank, "name": row["organization_name"], "runs": row["runs"]}
-                for rank, row in enumerate(org_rows[:10], start=1)
-            ],
-        }
+        stats["organization_leaderboard"] = organization_leaderboard
         stats["org_achievements"] = _org_achievements(org_streak, user_organization_rank)
 
         # The local User pk is not the AWX user id (this deployment uses DAB's
@@ -403,37 +449,7 @@ class DashboardLeaderboardsViewSet(ReadOnlyModelViewSet):
             .first()
         )
 
-        # Activity levels: one GROUP BY launched_by_id over the window; each
-        # activity level is an in-memory ranking of those rows.
-        per_user_rows = list(
-            successful_runs.filter(launched_by_id__isnull=False)
-            .order_by()
-            .values("launched_by_id")
-            .annotate(
-                volume=Count("id"),  # total successful runs
-                breadth=Count("template_id", distinct=True),  # distinct templates
-                consistency=Count(TruncDate("finished", tzinfo=UTC), distinct=True),  # active days
-            )
-        )
-        ranked_by_metric = {
-            metric: sorted(per_user_rows, key=lambda row: (-row[metric], row["launched_by_id"]))
-            for metric in ("volume", "breadth", "consistency")
-        }
-        # Latest known username, fetched only for the ids that actually surface in
-        # a top 10 (<= 30) — identity and ranking are by id, this is display only.
-        # An empty ``visible_ids`` makes ``__in`` a no-op (no query).
-        visible_ids = {row["launched_by_id"] for ranked in ranked_by_metric.values() for row in ranked[:10]}
-        usernames_by_id: dict[int, str | None] = {
-            user_id: username
-            for user_id, username in successful_runs.filter(launched_by_id__in=visible_ids)
-            .order_by("launched_by_id", "-finished")
-            .distinct("launched_by_id")
-            .values_list("launched_by_id", "launched_by_username")
-        }
-        stats["activity_levels"] = [
-            _activity_level(metric, ranked_by_metric[metric], usernames_by_id, current_user_id)
-            for metric in ("volume", "breadth", "consistency")
-        ]
+        stats["activity_levels"] = _build_activity_levels(successful_runs, current_user_id)
 
         stats["user_achievements"] = _user_achievements(successful_runs, current_user_id, today, window_start, now_utc)
         return Response(self.get_serializer(stats).data)

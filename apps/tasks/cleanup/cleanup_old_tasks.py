@@ -10,6 +10,7 @@ import logging
 from datetime import timedelta
 from typing import Any
 
+from django.db.models import Q
 from django.utils import timezone
 
 from ..utils import create_task_result, log_task_execution
@@ -52,30 +53,30 @@ def cleanup_old_tasks(**kwargs) -> dict[str, Any]:
 
     # Find tasks that are completed or failed and older than cutoff date
     # Use completed_at if available, otherwise fall back to modified date
-    old_tasks_filter = {
-        "status__in": ["completed", "failed"],
-        "completed_at__lt": cutoff_date,
-        "completed_at__isnull": False,
-    }
+    old_tasks_filter = Q(
+        status__in=["completed", "failed"],
+        completed_at__lt=cutoff_date,
+        completed_at__isnull=False,
+    )
 
     # Exclude recurring tasks if preserve_recurring is True (default)
     if preserve_recurring:
-        old_tasks_filter["cron_expression__isnull"] = True
+        old_tasks_filter &= Task.non_recurring_filter()
 
-    old_tasks = Task.objects.filter(**old_tasks_filter)
+    old_tasks = Task.objects.filter(old_tasks_filter)
 
     # Also include tasks that don't have completed_at but are old based on modified date
-    old_tasks_fallback_filter = {
-        "status__in": ["completed", "failed"],
-        "completed_at__isnull": True,
-        "modified__lt": cutoff_date,
-    }
+    old_tasks_fallback_filter = Q(
+        status__in=["completed", "failed"],
+        completed_at__isnull=True,
+        modified__lt=cutoff_date,
+    )
 
     # Exclude recurring tasks if preserve_recurring is True (default)
     if preserve_recurring:
-        old_tasks_fallback_filter["cron_expression__isnull"] = True
+        old_tasks_fallback_filter &= Task.non_recurring_filter()
 
-    old_tasks_fallback = Task.objects.filter(**old_tasks_fallback_filter)
+    old_tasks_fallback = Task.objects.filter(old_tasks_fallback_filter)
 
     # Combine querysets
     old_tasks = old_tasks | old_tasks_fallback

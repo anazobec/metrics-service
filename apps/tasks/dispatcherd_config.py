@@ -48,7 +48,7 @@ def setup_dispatcherd_config() -> None:
 
         config_file = get_config_file_path()
 
-        # FIXME: does it ever not?
+        # Fall back to Django settings when the configured file is absent.
         if config_file.exists():
             # Load config file and merge with Django database settings
             logger.info(f"Loading dispatcherd config from file: {config_file}")

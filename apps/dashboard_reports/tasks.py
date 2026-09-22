@@ -88,36 +88,11 @@ def get_retention_days(db_name: str = DEFAULT_AWX_DB_NAME) -> int:
         logger.exception(f"Error fetching retention settings; using default {DEFAULT_RETENTION_DAYS} days")
         return DEFAULT_RETENTION_DAYS
 
-    active = []
-    for row in retention_data:
-        if row.get("job_type") != "cleanup_jobs" or not row.get("schedule_enabled"):
-            continue
-        raw_days = row.get("retention_days")
-        if raw_days is None:
-            continue
-        try:
-            days = int(raw_days)
-        except (TypeError, ValueError):
-            logger.warning(f"get_retention_days: skipping schedule with invalid retention_days={raw_days!r}")
-            continue
-        active.append({**row, "retention_days": days})
+    active = _active_retention_schedules(retention_data)
     if not active:
         return DEFAULT_RETENTION_DAYS
 
-    best: dict = active[0]
-    for row in active[1:]:
-        if row["retention_days"] < best["retention_days"]:
-            best = row
-        elif row["retention_days"] == best["retention_days"]:
-            try:
-                row_next = _parse_dt(row.get("next_run"))
-                best_next = _parse_dt(best.get("next_run"))
-            except TypeError:
-                continue
-            if row_next is not None and (best_next is None or row_next < best_next):
-                best = row
-
-    return best["retention_days"]
+    return _select_retention_schedule(active)["retention_days"]
 
 
 def _parse_dt(value: Any) -> datetime | None:
@@ -136,6 +111,45 @@ def _parse_dt(value: Any) -> datetime | None:
     if isinstance(value, datetime):
         return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
     raise TypeError(f"_parse_dt: expected str, datetime, or None; got {type(value).__name__!r}")
+
+
+def _active_retention_schedules(retention_data: list[dict]) -> list[dict]:
+    """Return enabled cleanup-job schedules with valid integer retention periods."""
+    active = []
+    for row in retention_data:
+        if row.get("job_type") != "cleanup_jobs" or not row.get("schedule_enabled"):
+            continue
+        raw_days = row.get("retention_days")
+        if raw_days is None:
+            continue
+        try:
+            days = int(raw_days)
+        except (TypeError, ValueError):
+            logger.warning(f"get_retention_days: skipping schedule with invalid retention_days={raw_days!r}")
+            continue
+        active.append({**row, "retention_days": days})
+    return active
+
+
+def _select_retention_schedule(active: list[dict]) -> dict:
+    """Select the most aggressive active schedule, breaking ties by the soonest next run."""
+    best: dict = active[0]
+    for row in active[1:]:
+        if row["retention_days"] < best["retention_days"] or (
+            row["retention_days"] == best["retention_days"] and _has_earlier_next_run(row, best)
+        ):
+            best = row
+    return best
+
+
+def _has_earlier_next_run(row: dict, best: dict) -> bool:
+    """Return whether ``row`` wins a retention tie by its next-run timestamp."""
+    try:
+        row_next = _parse_dt(row.get("next_run"))
+        best_next = _parse_dt(best.get("next_run"))
+    except TypeError:
+        return False
+    return row_next is not None and (best_next is None or row_next < best_next)
 
 
 def _collect_jobs(

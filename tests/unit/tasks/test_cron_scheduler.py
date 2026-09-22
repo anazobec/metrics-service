@@ -797,12 +797,14 @@ class TestRetryFailedTasks:
         ):
             scheduler._periodic_database_sync()
 
-    def test_retries_failed_task_with_remaining_attempts(self, user):
+    @pytest.mark.parametrize("cron_expression", [None, ""])
+    def test_retries_failed_task_with_remaining_attempts(self, user, cron_expression):
         """A failed task with attempts < max_attempts is retried."""
         from apps.tasks.models import Task
 
         task = Task.objects.create(
             name="Retryable Task",
+            cron_expression=cron_expression,
             function_name="hello_world",
             task_data={},
             created_by=user,

@@ -5,7 +5,12 @@ These tests verify the full round-trip: the viewset actually persists changes
 and reverts to system defaults correctly. No mocking of ORM calls.
 """
 
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+from unittest.mock import patch
+
 import pytest
+from django.db import close_old_connections
 from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -135,3 +140,40 @@ class TestTemplateMetadataPutPatchDb(TestCase):
         self.instance.refresh_from_db()
         assert self.instance.time_taken_manually_execute_minutes == 77
         assert self.instance.time_taken_create_automation_minutes == 60  # unchanged
+
+
+@pytest.mark.integration
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_template_metadata_creation_recovers_winner():
+    """A concurrent insert with the same AWX ID returns the row created by the winner."""
+    name = "Concurrent Template"
+    awx_id = 901001
+    TemplateMetadata.objects.filter(template_id=awx_id, template_name=name).delete()
+    lookup_barrier = Barrier(2)
+    create_barrier = Barrier(2)
+
+    def synchronized_lookup(_awx_id: int) -> None:
+        lookup_barrier.wait(timeout=10)
+
+    real_create_with_race_handling = TemplateMetadata._create_with_race_handling
+
+    def synchronized_create(name: str, awx_id: int | None) -> TemplateMetadata:
+        create_barrier.wait(timeout=10)
+        return real_create_with_race_handling(name, awx_id)
+
+    def create_metadata() -> TemplateMetadata:
+        close_old_connections()
+        try:
+            return TemplateMetadata.get_by_awx_id_or_name(name, awx_id=awx_id)
+        finally:
+            close_old_connections()
+
+    with (
+        patch.object(TemplateMetadata, "_lookup_by_id", side_effect=synchronized_lookup),
+        patch.object(TemplateMetadata, "_create_with_race_handling", side_effect=synchronized_create),
+        ThreadPoolExecutor(max_workers=2) as executor,
+    ):
+        instances = list(executor.map(lambda _worker: create_metadata(), range(2)))
+
+    assert instances[0].pk == instances[1].pk
+    assert TemplateMetadata.objects.filter(template_id=awx_id).count() == 1

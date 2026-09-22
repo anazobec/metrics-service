@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 else:
     _ReportSerializerBase = serializers.ModelSerializer
 
+SUCCESSFUL_RUNS_IN_WINDOW = "Successful runs in the window"
+
 
 class FilterOptionWithIdSerializer(serializers.Serializer):
     """Serializer for a single filter dropdown option with an integer ID and display name."""
@@ -388,7 +390,7 @@ class FeaturedTemplateSerializer(serializers.Serializer):
 
     id = serializers.IntegerField(allow_null=True, help_text="AWX template ID")
     name = serializers.CharField(allow_null=True, help_text="Template name")
-    run_count = serializers.IntegerField(help_text="Successful runs in the window")
+    run_count = serializers.IntegerField(help_text=SUCCESSFUL_RUNS_IN_WINDOW)
 
 
 class StreakDaySerializer(serializers.Serializer):
@@ -410,7 +412,7 @@ class OrgStreakOrganizationSerializer(serializers.Serializer):
 
     id = serializers.IntegerField(help_text="AWX organization ID")
     name = serializers.CharField(allow_null=True, help_text="Organization name")
-    run_count = serializers.IntegerField(help_text="Successful runs in the window")
+    run_count = serializers.IntegerField(help_text=SUCCESSFUL_RUNS_IN_WINDOW)
 
 
 class OrgStreakSerializer(AutomationStreakSerializer):
@@ -424,7 +426,7 @@ class OrganizationLeaderboardRowSerializer(serializers.Serializer):
 
     rank = serializers.IntegerField(help_text="1-based position")
     name = serializers.CharField(allow_null=True, help_text="Organization name")
-    runs = serializers.IntegerField(help_text="Successful runs in the window")
+    runs = serializers.IntegerField(help_text=SUCCESSFUL_RUNS_IN_WINDOW)
 
 
 class OrganizationLeaderboardSerializer(serializers.Serializer):

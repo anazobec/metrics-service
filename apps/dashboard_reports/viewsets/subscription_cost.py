@@ -48,9 +48,6 @@ class SubscriptionCostViewSet(ListModelMixin, UpdateModelMixin, GenericAdminView
 
     def get_queryset(self) -> QuerySet[SubscriptionCost]:
         """Return all SubscriptionCost records, ensuring the singleton exists."""
-        # TODO (Tech Preview): Creating the singleton here is a hidden write side-effect
-        # on a read path — it fires on every GET, schema generation, and permission check.
-        # At GA, guarantee the singleton via a management command or data migration instead.
         SubscriptionCost.get()
         return SubscriptionCost.objects.all()
 

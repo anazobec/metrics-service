@@ -329,6 +329,16 @@ class TestCleanupOldTasks:
             cron_expression="",  # Empty string should be cleaned up
             completed_at=old_time,
         )
+        task_with_empty_string_fallback = Task.objects.create(
+            name="Task with empty cron fallback",
+            function_name="hello_world",
+            task_data={},
+            created_by=user,
+            status="completed",
+            cron_expression="",
+            completed_at=None,
+        )
+        Task.objects.filter(id=task_with_empty_string_fallback.id).update(modified=old_time)
 
         # Create task with NULL cron_expression
         task_with_null = Task.objects.create(
@@ -357,13 +367,10 @@ class TestCleanupOldTasks:
 
         # Assert
         # Empty string and NULL should be deleted, but valid cron should be preserved
-        # FIXME: This test will fail until we also update the cleanup filter
-        # For now, we're only fixing the serializer to prevent new tasks from having empty strings
-        assert result["tasks_deleted"] == 1  # Only task_with_null should be deleted
+        assert result["tasks_deleted"] == 3
         assert not Task.objects.filter(id=task_with_null.id).exists()
-
-        # Empty string task still exists (bug) - will be fixed in cleanup filter
-        assert Task.objects.filter(id=task_with_empty_string.id).exists()
+        assert not Task.objects.filter(id=task_with_empty_string.id).exists()
+        assert not Task.objects.filter(id=task_with_empty_string_fallback.id).exists()
 
         # Valid cron task should still exist
         assert Task.objects.filter(id=task_with_valid_cron.id).exists()
