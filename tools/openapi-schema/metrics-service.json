@@ -222,8 +222,8 @@
             },
             "post": {
                 "operationId": "dashboard_reports_collection_status_create",
-                "description": "Sets the runtime-toggleable show_gamification setting. Requires system admin or auditor permissions. Takes effect immediately without a service restart.",
-                "summary": "Toggle the show_gamification feature flag.",
+                "description": "Sets the runtime-toggleable show_leaderboard setting. Requires system admin or auditor permissions. Takes effect immediately without a service restart.",
+                "summary": "Toggle the show_leaderboard feature flag.",
                 "tags": [
                     "dashboard_reports"
                 ],
@@ -244,7 +244,8 @@
                                 "$ref": "#/components/schemas/DashboardCollectionPostRequestRequest"
                             }
                         }
-                    }
+                    },
+                    "required": true
                 },
                 "security": [
                     {
@@ -707,6 +708,16 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/DashboardLeaderboards"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DashboardLeaderboardDisabledResponse"
                                 }
                             }
                         },
@@ -11597,6 +11608,11 @@
                         "type": "string",
                         "nullable": true
                     },
+                    "last_sync": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
                     "initial_collection_status": {
                         "type": "string",
                         "nullable": true
@@ -11606,7 +11622,7 @@
                         "format": "date-time",
                         "nullable": true
                     },
-                    "show_gamification": {
+                    "show_leaderboard": {
                         "type": "boolean"
                     },
                     "show_dashboard": {
@@ -11616,29 +11632,45 @@
                 "required": [
                     "enabled",
                     "initial_collection_status",
+                    "last_sync",
                     "min_collection_timestamp",
                     "next_run",
                     "show_dashboard",
-                    "show_gamification"
+                    "show_leaderboard"
                 ]
             },
             "DashboardCollectionPostRequestRequest": {
                 "type": "object",
                 "properties": {
-                    "show_gamification": {
-                        "type": "boolean",
-                        "default": false
+                    "show_leaderboard": {
+                        "type": "boolean"
                     }
-                }
+                },
+                "required": [
+                    "show_leaderboard"
+                ]
             },
             "DashboardCollectionPostResponse": {
                 "type": "object",
                 "properties": {
-                    "show_gamification": {
-                        "type": "boolean",
-                        "default": false
+                    "show_leaderboard": {
+                        "type": "boolean"
                     }
-                }
+                },
+                "required": [
+                    "show_leaderboard"
+                ]
+            },
+            "DashboardLeaderboardDisabledResponse": {
+                "type": "object",
+                "properties": {
+                    "detail": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "detail"
+                ]
             },
             "DashboardLeaderboards": {
                 "type": "object",

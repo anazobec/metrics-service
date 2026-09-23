@@ -2,6 +2,7 @@
 GET/POST /api/v1/dashboard_reports/collection_status/."""
 
 import json
+from datetime import UTC, datetime
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -10,6 +11,7 @@ from django.urls import resolve
 from rest_framework.test import APIClient
 
 from apps.dynamic_settings.models import Setting
+from apps.tasks.models import Task, TaskExecution
 from tests.test_utils import get_test_password
 
 User = get_user_model()
@@ -36,7 +38,7 @@ class TestCollectionStatusEndpoint(TestCase):
         )
 
     def tearDown(self):
-        Setting.objects.filter(setting_key="SHOW_GAMIFICATION").delete()
+        Setting.objects.filter(setting_key="SHOW_LEADERBOARD").delete()
         super().tearDown()
 
     def test_endpoint_resolves(self):
@@ -55,77 +57,152 @@ class TestCollectionStatusEndpoint(TestCase):
         response = self.client.get(COLLECTION_STATUS_ENDPOINT)
         assert response.status_code == 403
 
-    def test_get_default_show_gamification_false(self):
-        """With no Setting row present, show_gamification defaults to False."""
+    def test_get_default_show_leaderboard_true(self):
+        """With no Setting row present, show_leaderboard defaults to True."""
         self.client.force_authenticate(user=self.admin)
         response = self.client.get(COLLECTION_STATUS_ENDPOINT)
-        assert response.json()["show_gamification"] is False
+        assert response.json()["show_leaderboard"] is True
 
     def test_post_as_admin_sets_flag_true(self):
-        """Admin POST with show_gamification=True persists a Setting row and is reflected in GET."""
+        """Admin POST with show_leaderboard=True persists a Setting row and is reflected in GET."""
         self.client.force_authenticate(user=self.admin)
 
-        post_response = self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_gamification": True}, format="json")
+        post_response = self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_leaderboard": True}, format="json")
         assert post_response.status_code == 200
-        assert post_response.json() == {"show_gamification": True}
+        assert post_response.json() == {"show_leaderboard": True}
 
-        setting = Setting.objects.get(setting_key="SHOW_GAMIFICATION")
+        setting = Setting.objects.get(setting_key="SHOW_LEADERBOARD")
         assert json.loads(setting.current_value) is True
         assert setting.last_modified_by == self.admin
 
         get_response = self.client.get(COLLECTION_STATUS_ENDPOINT)
-        assert get_response.json()["show_gamification"] is True
+        assert get_response.json()["show_leaderboard"] is True
 
     def test_post_as_admin_sets_flag_false(self):
-        """Admin POST with show_gamification=False persists a Setting row and is reflected in GET."""
+        """Admin POST with show_leaderboard=False persists a Setting row and is reflected in GET."""
         self.client.force_authenticate(user=self.admin)
         Setting.objects.create(
-            setting_key="SHOW_GAMIFICATION", current_value=json.dumps(True), last_modified_by=self.admin
+            setting_key="SHOW_LEADERBOARD", current_value=json.dumps(True), last_modified_by=self.admin
         )
 
-        post_response = self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_gamification": False}, format="json")
+        post_response = self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_leaderboard": False}, format="json")
         assert post_response.status_code == 200
-        assert post_response.json() == {"show_gamification": False}
+        assert post_response.json() == {"show_leaderboard": False}
 
-        setting = Setting.objects.get(setting_key="SHOW_GAMIFICATION")
+        setting = Setting.objects.get(setting_key="SHOW_LEADERBOARD")
         assert json.loads(setting.current_value) is False
 
         get_response = self.client.get(COLLECTION_STATUS_ENDPOINT)
-        assert get_response.json()["show_gamification"] is False
+        assert get_response.json()["show_leaderboard"] is False
 
     def test_post_updates_existing_row_not_duplicated(self):
         """A second POST updates the same Setting row instead of creating a new one."""
         self.client.force_authenticate(user=self.admin)
 
-        self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_gamification": True}, format="json")
-        self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_gamification": False}, format="json")
+        self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_leaderboard": True}, format="json")
+        self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_leaderboard": False}, format="json")
 
-        assert Setting.objects.filter(setting_key="SHOW_GAMIFICATION").count() == 1
-        setting = Setting.objects.get(setting_key="SHOW_GAMIFICATION")
+        assert Setting.objects.filter(setting_key="SHOW_LEADERBOARD").count() == 1
+        setting = Setting.objects.get(setting_key="SHOW_LEADERBOARD")
         assert json.loads(setting.current_value) is False
 
     def test_post_as_regular_user_forbidden(self):
-        """Non-admin/auditor users cannot toggle show_gamification."""
+        """Non-admin/auditor users cannot toggle show_leaderboard."""
         self.client.force_authenticate(user=self.regular_user)
-        response = self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_gamification": True}, format="json")
+        response = self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_leaderboard": True}, format="json")
         assert response.status_code == 403
-        assert not Setting.objects.filter(setting_key="SHOW_GAMIFICATION").exists()
+        assert not Setting.objects.filter(setting_key="SHOW_LEADERBOARD").exists()
 
     def test_post_unauthenticated_forbidden(self):
         """Unauthenticated POST requests are rejected."""
-        response = self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_gamification": True}, format="json")
+        response = self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_leaderboard": True}, format="json")
         assert response.status_code == 403
-        assert not Setting.objects.filter(setting_key="SHOW_GAMIFICATION").exists()
+        assert not Setting.objects.filter(setting_key="SHOW_LEADERBOARD").exists()
 
     def test_post_non_boolean_value_returns_400(self):
-        """A non-boolean show_gamification value is rejected with 400."""
+        """A non-boolean show_leaderboard value is rejected with 400."""
         self.client.force_authenticate(user=self.admin)
-        response = self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_gamification": "yes"}, format="json")
+        response = self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_leaderboard": "yes"}, format="json")
         assert response.status_code == 400
-        assert not Setting.objects.filter(setting_key="SHOW_GAMIFICATION").exists()
+        assert not Setting.objects.filter(setting_key="SHOW_LEADERBOARD").exists()
+
+
+@pytest.mark.integration
+class TestCollectionStatusLastSync(TestCase):
+    """Integration tests for last_sync: no sync -> trigger sync -> completed execution reflected."""
+
+    def setUp(self):
+        super().setUp()
+        # last_sync is only computed when DASHBOARD_COLLECTION is enabled; set it explicitly
+        # rather than relying on the ambient default, which isn't guaranteed across environments.
+        Setting.objects.update_or_create(setting_key="DASHBOARD_COLLECTION", defaults={"current_value": "true"})
+        self.client = APIClient()
+        self.admin = User.objects.create_superuser(
+            username="last_sync_admin",
+            email="last_sync_admin@example.com",
+            password=get_test_password(),
+        )
+        self.client.force_authenticate(user=self.admin)
+
+    def _create_completed_sync_execution(self, completed_at):
+        """Create a Task + a completed TaskExecution for sync_dashboard_job_records."""
+        task = Task.objects.create(
+            name=f"sync_dashboard_jobs_{completed_at.isoformat()}_0",
+            function_name="sync_dashboard_job_records",
+        )
+        execution = TaskExecution.objects.create(task=task, status="completed")
+        execution.completed_at = completed_at
+        execution.save()
+        return execution
+
+    def test_no_sync_yet_before_any_completed_execution(self):
+        """With no TaskExecution rows at all, last_sync is 'None'."""
+        response = self.client.get(COLLECTION_STATUS_ENDPOINT)
+        assert response.status_code == 200
+        assert response.json()["last_sync"] is None
+
+    def test_last_sync_reflects_completed_execution_after_it_finishes(self):
+        """Simulates: check status (no sync yet) -> a sync_dashboard_job_records task runs and
+        completes -> check status again -> last_sync now matches that execution's completed_at."""
+        response = self.client.get(COLLECTION_STATUS_ENDPOINT)
+        assert response.json()["last_sync"] is None
+
+        completed_at = datetime(2026, 9, 29, 11, 3, 6, tzinfo=UTC)
+        self._create_completed_sync_execution(completed_at)
+
+        response = self.client.get(COLLECTION_STATUS_ENDPOINT)
+        assert response.status_code == 200
+        returned = datetime.fromisoformat(response.json()["last_sync"].replace("Z", "+00:00"))
+        assert returned == completed_at
+
+    def test_last_sync_ignores_running_or_pending_executions(self):
+        """A running/pending TaskExecution for the same task must not surface as last_sync."""
+        task = Task.objects.create(name="sync_dashboard_jobs_pending_0", function_name="sync_dashboard_job_records")
+        TaskExecution.objects.create(task=task, status="running")
+        TaskExecution.objects.create(task=task, status="pending")
+
+        response = self.client.get(COLLECTION_STATUS_ENDPOINT)
+        assert response.json()["last_sync"] is None
+
+    def test_failed_execution_does_not_overwrite_last_known_good_sync(self):
+        """A later failed execution must not overwrite the last successful sync timestamp."""
+        success_completed_at = datetime(2026, 9, 29, 11, 3, 6, tzinfo=UTC)
+        self._create_completed_sync_execution(success_completed_at)
+
+        failed_task = Task.objects.create(
+            name="sync_dashboard_jobs_failed_0", function_name="sync_dashboard_job_records"
+        )
+        failed = TaskExecution.objects.create(task=failed_task, status="failed")
+        failed.completed_at = datetime(2026, 9, 29, 12, 0, 0, tzinfo=UTC)  # later than the successful run
+        failed.save()
+
+        response = self.client.get(COLLECTION_STATUS_ENDPOINT)
+        assert response.status_code == 200
+        returned = datetime.fromisoformat(response.json()["last_sync"].replace("Z", "+00:00"))
+        assert returned == success_completed_at
 
     def test_post_missing_value_returns_400(self):
-        """A POST body without show_gamification is rejected with 400."""
+        """A POST body without show_leaderboard is rejected with 400."""
         self.client.force_authenticate(user=self.admin)
         response = self.client.post(COLLECTION_STATUS_ENDPOINT, {}, format="json")
         assert response.status_code == 400
