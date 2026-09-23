@@ -222,8 +222,8 @@
             },
             "post": {
                 "operationId": "dashboard_reports_collection_status_create",
-                "description": "Sets the runtime-toggleable show_gamification setting. Requires system admin or auditor permissions. Takes effect immediately without a service restart.",
-                "summary": "Toggle the show_gamification feature flag.",
+                "description": "Sets the runtime-toggleable show_leaderboard setting. Requires system admin or auditor permissions. Takes effect immediately without a service restart.",
+                "summary": "Toggle the show_leaderboard feature flag.",
                 "tags": [
                     "dashboard_reports"
                 ],
@@ -707,6 +707,16 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/DashboardLeaderboards"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DashboardLeaderboardDisabledResponse"
                                 }
                             }
                         },
@@ -11419,8 +11429,9 @@
                         "format": "date-time",
                         "nullable": true
                     },
-                    "show_gamification": {
-                        "type": "boolean"
+                    "show_leaderboard": {
+                        "type": "boolean",
+                        "default": true
                     },
                     "show_dashboard": {
                         "type": "boolean"
@@ -11431,27 +11442,37 @@
                     "initial_collection_status",
                     "min_collection_timestamp",
                     "next_run",
-                    "show_dashboard",
-                    "show_gamification"
+                    "show_dashboard"
                 ]
             },
             "DashboardCollectionPostRequestRequest": {
                 "type": "object",
                 "properties": {
-                    "show_gamification": {
+                    "show_leaderboard": {
                         "type": "boolean",
-                        "default": false
+                        "default": true
                     }
                 }
             },
             "DashboardCollectionPostResponse": {
                 "type": "object",
                 "properties": {
-                    "show_gamification": {
+                    "show_leaderboard": {
                         "type": "boolean",
                         "default": false
                     }
                 }
+            },
+            "DashboardLeaderboardDisabledResponse": {
+                "type": "object",
+                "properties": {
+                    "detail": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "detail"
+                ]
             },
             "DashboardLeaderboards": {
                 "type": "object",

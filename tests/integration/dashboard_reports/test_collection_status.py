@@ -36,7 +36,7 @@ class TestCollectionStatusEndpoint(TestCase):
         )
 
     def tearDown(self):
-        Setting.objects.filter(setting_key="SHOW_GAMIFICATION").delete()
+        Setting.objects.filter(setting_key="SHOW_LEADERBOARD").delete()
         super().tearDown()
 
     def test_endpoint_resolves(self):
@@ -55,77 +55,77 @@ class TestCollectionStatusEndpoint(TestCase):
         response = self.client.get(COLLECTION_STATUS_ENDPOINT)
         assert response.status_code == 403
 
-    def test_get_default_show_gamification_false(self):
-        """With no Setting row present, show_gamification defaults to False."""
+    def test_get_default_show_leaderboard_true(self):
+        """With no Setting row present, show_leaderboard defaults to True."""
         self.client.force_authenticate(user=self.admin)
         response = self.client.get(COLLECTION_STATUS_ENDPOINT)
-        assert response.json()["show_gamification"] is False
+        assert response.json()["show_leaderboard"] is True
 
     def test_post_as_admin_sets_flag_true(self):
-        """Admin POST with show_gamification=True persists a Setting row and is reflected in GET."""
+        """Admin POST with show_leaderboard=True persists a Setting row and is reflected in GET."""
         self.client.force_authenticate(user=self.admin)
 
-        post_response = self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_gamification": True}, format="json")
+        post_response = self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_leaderboard": True}, format="json")
         assert post_response.status_code == 200
-        assert post_response.json() == {"show_gamification": True}
+        assert post_response.json() == {"show_leaderboard": True}
 
-        setting = Setting.objects.get(setting_key="SHOW_GAMIFICATION")
+        setting = Setting.objects.get(setting_key="SHOW_LEADERBOARD")
         assert json.loads(setting.current_value) is True
         assert setting.last_modified_by == self.admin
 
         get_response = self.client.get(COLLECTION_STATUS_ENDPOINT)
-        assert get_response.json()["show_gamification"] is True
+        assert get_response.json()["show_leaderboard"] is True
 
     def test_post_as_admin_sets_flag_false(self):
-        """Admin POST with show_gamification=False persists a Setting row and is reflected in GET."""
+        """Admin POST with show_leaderboard=False persists a Setting row and is reflected in GET."""
         self.client.force_authenticate(user=self.admin)
         Setting.objects.create(
-            setting_key="SHOW_GAMIFICATION", current_value=json.dumps(True), last_modified_by=self.admin
+            setting_key="SHOW_LEADERBOARD", current_value=json.dumps(True), last_modified_by=self.admin
         )
 
-        post_response = self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_gamification": False}, format="json")
+        post_response = self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_leaderboard": False}, format="json")
         assert post_response.status_code == 200
-        assert post_response.json() == {"show_gamification": False}
+        assert post_response.json() == {"show_leaderboard": False}
 
-        setting = Setting.objects.get(setting_key="SHOW_GAMIFICATION")
+        setting = Setting.objects.get(setting_key="SHOW_LEADERBOARD")
         assert json.loads(setting.current_value) is False
 
         get_response = self.client.get(COLLECTION_STATUS_ENDPOINT)
-        assert get_response.json()["show_gamification"] is False
+        assert get_response.json()["show_leaderboard"] is False
 
     def test_post_updates_existing_row_not_duplicated(self):
         """A second POST updates the same Setting row instead of creating a new one."""
         self.client.force_authenticate(user=self.admin)
 
-        self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_gamification": True}, format="json")
-        self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_gamification": False}, format="json")
+        self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_leaderboard": True}, format="json")
+        self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_leaderboard": False}, format="json")
 
-        assert Setting.objects.filter(setting_key="SHOW_GAMIFICATION").count() == 1
-        setting = Setting.objects.get(setting_key="SHOW_GAMIFICATION")
+        assert Setting.objects.filter(setting_key="SHOW_LEADERBOARD").count() == 1
+        setting = Setting.objects.get(setting_key="SHOW_LEADERBOARD")
         assert json.loads(setting.current_value) is False
 
     def test_post_as_regular_user_forbidden(self):
-        """Non-admin/auditor users cannot toggle show_gamification."""
+        """Non-admin/auditor users cannot toggle show_leaderboard."""
         self.client.force_authenticate(user=self.regular_user)
-        response = self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_gamification": True}, format="json")
+        response = self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_leaderboard": True}, format="json")
         assert response.status_code == 403
-        assert not Setting.objects.filter(setting_key="SHOW_GAMIFICATION").exists()
+        assert not Setting.objects.filter(setting_key="SHOW_LEADERBOARD").exists()
 
     def test_post_unauthenticated_forbidden(self):
         """Unauthenticated POST requests are rejected."""
-        response = self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_gamification": True}, format="json")
+        response = self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_leaderboard": True}, format="json")
         assert response.status_code == 403
-        assert not Setting.objects.filter(setting_key="SHOW_GAMIFICATION").exists()
+        assert not Setting.objects.filter(setting_key="SHOW_LEADERBOARD").exists()
 
     def test_post_non_boolean_value_returns_400(self):
-        """A non-boolean show_gamification value is rejected with 400."""
+        """A non-boolean show_leaderboard value is rejected with 400."""
         self.client.force_authenticate(user=self.admin)
-        response = self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_gamification": "yes"}, format="json")
+        response = self.client.post(COLLECTION_STATUS_ENDPOINT, {"show_leaderboard": "yes"}, format="json")
         assert response.status_code == 400
-        assert not Setting.objects.filter(setting_key="SHOW_GAMIFICATION").exists()
+        assert not Setting.objects.filter(setting_key="SHOW_LEADERBOARD").exists()
 
     def test_post_missing_value_returns_400(self):
-        """A POST body without show_gamification is rejected with 400."""
+        """A POST body without show_leaderboard is rejected with 400."""
         self.client.force_authenticate(user=self.admin)
         response = self.client.post(COLLECTION_STATUS_ENDPOINT, {}, format="json")
         assert response.status_code == 400

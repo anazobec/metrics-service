@@ -19,20 +19,20 @@ from apps.tasks.task_groups import get_feature_enabled_from_db
 
 @extend_schema_view(
     create=extend_schema(
-        summary="Toggle the show_gamification feature flag.",
-        description="Sets the runtime-toggleable show_gamification setting. Requires system admin or auditor "
+        summary="Toggle the show_leaderboard feature flag.",
+        description="Sets the runtime-toggleable show_leaderboard setting. Requires system admin or auditor "
         "permissions. Takes effect immediately without a service restart.",
         request=inline_serializer(
             name="DashboardCollectionPostRequest",
             fields={
-                "show_gamification": serializers.BooleanField(default=False),
+                "show_leaderboard": serializers.BooleanField(default=True),
             },
         ),
         responses={
             200: inline_serializer(
                 name="DashboardCollectionPostResponse",
                 fields={
-                    "show_gamification": serializers.BooleanField(default=False),
+                    "show_leaderboard": serializers.BooleanField(default=False),
                 },
             ),
         },
@@ -48,7 +48,7 @@ from apps.tasks.task_groups import get_feature_enabled_from_db
                     "next_run": serializers.CharField(allow_null=True),
                     "initial_collection_status": serializers.CharField(allow_null=True),
                     "min_collection_timestamp": serializers.DateTimeField(allow_null=True),
-                    "show_gamification": serializers.BooleanField(),
+                    "show_leaderboard": serializers.BooleanField(default=True),
                     "show_dashboard": serializers.BooleanField(),
                 },
             ),
@@ -66,18 +66,18 @@ class DashboardCollectionStatusViewSet(ViewSet):
         if not is_system_admin_or_auditor:
             raise PermissionDenied
 
-        new_show_gamification = request.data.get("show_gamification")
-        if not isinstance(new_show_gamification, bool):
-            raise ValidationError({"show_gamification": "Value must be a boolean: true/false"})
+        new_show_leaderboard = request.data.get("show_leaderboard")
+        if not isinstance(new_show_leaderboard, bool):
+            raise ValidationError({"show_leaderboard": "Value must be a boolean: true/false"})
 
         Setting.objects.update_or_create(
-            setting_key="SHOW_GAMIFICATION",
-            defaults={"current_value": json.dumps(new_show_gamification), "last_modified_by": request.user},
+            setting_key="SHOW_LEADERBOARD",
+            defaults={"current_value": json.dumps(new_show_leaderboard), "last_modified_by": request.user},
         )
 
         return Response(
             {
-                "show_gamification": new_show_gamification,
+                "show_leaderboard": new_show_leaderboard,
             }
         )
 
@@ -90,7 +90,7 @@ class DashboardCollectionStatusViewSet(ViewSet):
         """
         is_system_admin_or_auditor = IsSystemAdminOrAuditor().has_permission(request, self)
         enabled = get_feature_enabled_from_db("DASHBOARD_COLLECTION", default=True)
-        show_gamification = get_feature_enabled_from_db("SHOW_GAMIFICATION", default=False)
+        show_leaderboard = get_feature_enabled_from_db("SHOW_LEADERBOARD", default=True)
         show_dashboard = get_feature_enabled_from_db("SHOW_DASHBOARD", default=True) and is_system_admin_or_auditor
 
         next_run = None
@@ -122,7 +122,7 @@ class DashboardCollectionStatusViewSet(ViewSet):
                 "next_run": next_run,
                 "initial_collection_status": initial_collection_status,
                 "min_collection_timestamp": min_collection_timestamp,
-                "show_gamification": show_gamification,  # toggle-able by admins/system-auditors
+                "show_leaderboard": show_leaderboard,  # toggle-able by admins/system-auditors
                 "show_dashboard": show_dashboard,  # only if user == admin
             }
         )

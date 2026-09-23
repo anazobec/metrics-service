@@ -7,11 +7,13 @@ tests pin "now" so the 30-day window is deterministic.
 
 import datetime
 import itertools
+import json
 
 import pytest
 from django.urls import reverse
 
 from apps.dashboard_reports.models import JobData, JobStatusChoices
+from apps.dynamic_settings.models import Setting
 
 pytestmark = [pytest.mark.unit, pytest.mark.django_db]
 
@@ -100,6 +102,31 @@ class TestAuth:
     def test_detail_route_not_supported(self, authenticated_client):
         response = authenticated_client.get(reverse("v1:leaderboard-detail", args=[1]))
         assert response.status_code == 405
+
+
+class TestLeaderboardFlag:
+    def test_returns_404_when_show_leaderboard_disabled(self, authenticated_client):
+        """When SHOW_LEADERBOARD is explicitly False, the endpoint returns 404."""
+        Setting.objects.update_or_create(setting_key="SHOW_LEADERBOARD", defaults={"current_value": json.dumps(False)})
+
+        response = authenticated_client.get(URL)
+
+        assert response.status_code == 404
+        assert response.data == {"detail": "Leaderboard not enabled"}
+
+    def test_returns_200_when_show_leaderboard_setting_missing(self, authenticated_client):
+        """With no Setting row at all, the endpoint defaults to enabled and returns 200."""
+        Setting.objects.filter(setting_key="SHOW_LEADERBOARD").delete()
+
+        response = authenticated_client.get(URL)
+
+        assert response.status_code == 200
+
+    def test_returns_200_when_show_leaderboard_enabled(self, authenticated_client):
+        """When SHOW_LEADERBOARD is explicitly True, the endpoint behaves normally."""
+        Setting.objects.update_or_create(setting_key="SHOW_LEADERBOARD", defaults={"current_value": json.dumps(True)})
+
+        assert authenticated_client.get(URL).status_code == 200
 
 
 class TestCounts:
@@ -601,5 +628,5 @@ class TestResponseShape:
             # One run as the authenticated user so the per-user achievements path
             # (including the "reliable" streak scan) is exercised too.
             make_job(day(offset), org_id=1, org_name="Org 1", template_id=offset % 5 + 1, **_me(user))
-        with django_assert_max_num_queries(12):  # 11 data queries today, 1 spare for headroom
+        with django_assert_max_num_queries(13):  # 12 data queries today (incl. SHOW_LEADERBOARD flag), 1 spare
             assert authenticated_client.get(URL).status_code == 200

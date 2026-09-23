@@ -9,8 +9,8 @@ from django.db import models
 from django.db.models import Count
 from django.db.models.functions import TruncDate
 from drf_spectacular.helpers import forced_singular_serializer
-from drf_spectacular.utils import extend_schema
-from rest_framework import status
+from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -18,6 +18,7 @@ from rest_framework.viewsets import ReadOnlyModelViewSet
 
 from apps.dashboard_reports.models import JobData, JobStatusChoices
 from apps.dashboard_reports.serializers import DashboardLeaderboardsSerializer
+from apps.tasks.task_groups import get_feature_enabled_from_db
 
 logger = logging.getLogger(__name__)
 
@@ -377,10 +378,25 @@ class DashboardLeaderboardsViewSet(ReadOnlyModelViewSet):
             "featured template, enterprise/org automation streaks, the organization leaderboard, "
             "per-user activity levels (volume/breadth/consistency) and earned achievements."
         ),
-        responses={200: forced_singular_serializer(DashboardLeaderboardsSerializer)},
+        responses={
+            200: forced_singular_serializer(DashboardLeaderboardsSerializer),
+            404: inline_serializer(
+                name="DashboardLeaderboardDisabledResponse",
+                fields={"detail": serializers.CharField()},
+            ),
+        },
     )
     def list(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         """Return leaderboard metrics for the trailing 30 days."""
+
+        # Check if leaderboard is enabled at all
+        is_leaderboard_enabled = get_feature_enabled_from_db("SHOW_LEADERBOARD", default=True)
+        if not is_leaderboard_enabled:
+            return Response(
+                data={"detail": "Leaderboard not enabled"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
         now_utc = datetime.now(UTC)
         today = now_utc.date()
         # 30 calendar days (UTC): from window_start 00:00 up to "now". Runs with a

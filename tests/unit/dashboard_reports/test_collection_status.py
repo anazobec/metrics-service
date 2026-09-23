@@ -46,7 +46,7 @@ class TestDashboardCollectionStatusViewSet:
             "next_run": None,
             "initial_collection_status": None,
             "min_collection_timestamp": None,
-            "show_gamification": False,
+            "show_leaderboard": False,
             "show_dashboard": False,
         }
         mock_task_class.objects.filter.assert_not_called()
@@ -90,7 +90,7 @@ class TestDashboardCollectionStatusViewSet:
             "next_run": None,
             "initial_collection_status": None,
             "min_collection_timestamp": None,
-            "show_gamification": True,
+            "show_leaderboard": True,
             "show_dashboard": True,
         }
 
@@ -184,7 +184,7 @@ class TestDashboardCollectionStatusURL:
 
 @pytest.mark.unit
 class TestDashboardCollectionStatusCreate:
-    """Tests for DashboardCollectionStatusViewSet.create() (POST show_gamification toggle)."""
+    """Tests for DashboardCollectionStatusViewSet.create() (POST show_leaderboard toggle)."""
 
     def _post(self, data):
         request = factory.post("/api/v1/dashboard_reports/collection_status/", data, format="json")
@@ -195,52 +195,52 @@ class TestDashboardCollectionStatusCreate:
     def test_non_admin_forbidden(self, mock_perm):
         """Non admin/auditor users get 403 and no Setting write is attempted."""
         with patch(PATCH_SETTING) as mock_setting:
-            response = self._post({"show_gamification": True})
+            response = self._post({"show_leaderboard": True})
             mock_setting.objects.update_or_create.assert_not_called()
         assert response.status_code == 403
 
     @patch(PATCH_PERM, return_value=True)
     def test_non_boolean_value_rejected(self, mock_perm):
-        """Non-boolean show_gamification value returns 400 and does not touch the DB."""
+        """Non-boolean show_leaderboard value returns 400 and does not touch the DB."""
         with patch(PATCH_SETTING) as mock_setting:
-            response = self._post({"show_gamification": "true"})
+            response = self._post({"show_leaderboard": "true"})
             mock_setting.objects.update_or_create.assert_not_called()
         assert response.status_code == 400
-        assert "show_gamification" in response.data
+        assert "show_leaderboard" in response.data
 
     @patch(PATCH_PERM, return_value=True)
     def test_missing_value_rejected(self, mock_perm):
-        """Missing show_gamification key returns 400."""
+        """Missing show_leaderboard key returns 400."""
         response = self._post({})
         assert response.status_code == 400
 
     @patch(PATCH_PERM, return_value=True)
     def test_sets_flag_true(self, mock_perm):
-        """POST with True persists SHOW_GAMIFICATION=true via update_or_create."""
+        """POST with True persists SHOW_LEADERBOARD=true via update_or_create."""
         with patch(PATCH_SETTING) as mock_setting:
-            response = self._post({"show_gamification": True})
+            response = self._post({"show_leaderboard": True})
             mock_setting.objects.update_or_create.assert_called_once()
             _, kwargs = mock_setting.objects.update_or_create.call_args
-            assert kwargs["setting_key"] == "SHOW_GAMIFICATION"
+            assert kwargs["setting_key"] == "SHOW_LEADERBOARD"
             assert kwargs["defaults"]["current_value"] == json.dumps(True)
         assert response.status_code == 200
-        assert response.data == {"show_gamification": True}
+        assert response.data == {"show_leaderboard": True}
 
     @patch(PATCH_PERM, return_value=True)
     def test_sets_flag_false(self, mock_perm):
-        """POST with False persists SHOW_GAMIFICATION=false via update_or_create."""
+        """POST with False persists SHOW_LEADERBOARD=false via update_or_create."""
         with patch(PATCH_SETTING) as mock_setting:
-            response = self._post({"show_gamification": False})
+            response = self._post({"show_leaderboard": False})
             _, kwargs = mock_setting.objects.update_or_create.call_args
             assert kwargs["defaults"]["current_value"] == json.dumps(False)
         assert response.status_code == 200
-        assert response.data == {"show_gamification": False}
+        assert response.data == {"show_leaderboard": False}
 
     @patch(PATCH_PERM, return_value=True)
     def test_last_modified_by_set_to_request_user(self, mock_perm):
         """The requesting user is recorded as last_modified_by."""
         request = factory.post(
-            "/api/v1/dashboard_reports/collection_status/", {"show_gamification": True}, format="json"
+            "/api/v1/dashboard_reports/collection_status/", {"show_leaderboard": True}, format="json"
         )
         sentinel_user = MagicMock()
         request.user = sentinel_user

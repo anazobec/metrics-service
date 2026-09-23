@@ -173,10 +173,10 @@ paths:
       x-ai-description: List all dashboard reports collection status
     post:
       operationId: dashboard_reports_collection_status_create
-      description: Sets the runtime-toggleable show_gamification setting. Requires
+      description: Sets the runtime-toggleable show_leaderboard setting. Requires
         system admin or auditor permissions. Takes effect immediately without a service
         restart.
-      summary: Toggle the show_gamification feature flag.
+      summary: Toggle the show_leaderboard feature flag.
       tags:
       - dashboard_reports
       requestBody:
@@ -476,6 +476,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DashboardLeaderboards'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardLeaderboardDisabledResponse'
           description: ''
       x-ai-description: List all dashboard reports leaderboard
   /api/v1/dashboard_reports/organizations/:
@@ -7360,8 +7366,9 @@ components:
           type: string
           format: date-time
           nullable: true
-        show_gamification:
+        show_leaderboard:
           type: boolean
+          default: true
         show_dashboard:
           type: boolean
       required:
@@ -7370,19 +7377,25 @@ components:
       - min_collection_timestamp
       - next_run
       - show_dashboard
-      - show_gamification
     DashboardCollectionPostRequestRequest:
       type: object
       properties:
-        show_gamification:
+        show_leaderboard:
           type: boolean
-          default: false
+          default: true
     DashboardCollectionPostResponse:
       type: object
       properties:
-        show_gamification:
+        show_leaderboard:
           type: boolean
           default: false
+    DashboardLeaderboardDisabledResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+      required:
+      - detail
     DashboardLeaderboards:
       type: object
       description: Full response for the dashboard leaderboards endpoint (trailing
