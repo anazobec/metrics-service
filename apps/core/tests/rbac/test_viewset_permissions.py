@@ -2,8 +2,11 @@ import uuid
 from unittest.mock import patch
 
 import pytest
-from ansible_base.rbac.models import RoleDefinition
+from ansible_base.rbac.models import DABContentType, RoleDefinition
+from django.test.utils import override_settings
 from rest_framework.test import APIClient
+
+from apps.core.models import Organization
 
 
 def make_user_data():
@@ -38,6 +41,11 @@ class TestSuperuserAccess:
         r = admin_api_client.delete(f"/api/v1/users/{rando.id}/")
         assert r.status_code == 204
 
+    def test_superuser_me_does_not_report_implicit_org_memberships(self, admin_api_client, organization):
+        r = admin_api_client.get("/api/v1/users/me/")
+        assert r.status_code == 200
+        assert r.data["member_of_organizations"] == []
+
 
 @pytest.mark.django_db
 class TestNormalUserAccess:
@@ -66,10 +74,12 @@ class TestNormalUserAccess:
         assert results == []
 
     def test_can_access_me_endpoint(self, user_api_client, rando):
-        with patch("apps.core.gateway_queries.fetch_member_organizations", return_value=[]):
+        with patch("ansible_base.resource_registry.rest_client.get_resource_server_client") as get_client:
             r = user_api_client.get("/api/v1/users/me/")
         assert r.status_code == 200
         assert r.data["username"] == rando.username
+        assert r.data["member_of_organizations"] == []
+        get_client.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -82,6 +92,30 @@ class TestOrgAdminAccess:
         assert r.status_code == 200
         results = r.data["results"] if isinstance(r.data, dict) else r.data
         assert len(results) == 1
+
+    def test_me_returns_locally_assigned_member_and_admin_organizations(
+        self, user_api_client, rando, organization, org_admin_rd, org_member_rd
+    ):
+        second_organization = Organization.objects.create(name="Second Org")
+        third_organization = Organization.objects.create(name="Third Org")
+        org_admin_rd.give_permission(rando, organization)
+        org_member_rd.give_permission(rando, second_organization)
+        with override_settings(ALLOW_SHARED_RESOURCE_CUSTOM_ROLES=True):
+            custom_member_rd = RoleDefinition.objects.create_from_permissions(
+                name="Custom Organization Membership",
+                permissions=["member_organization", "view_organization"],
+                content_type=DABContentType.objects.get_for_model(Organization),
+            )
+            custom_member_rd.give_permission(rando, third_organization)
+
+        r = user_api_client.get("/api/v1/users/me/")
+
+        assert r.status_code == 200
+        assert r.data["member_of_organizations"] == [
+            {"id": organization.id, "name": organization.name},
+            {"id": second_organization.id, "name": second_organization.name},
+            {"id": third_organization.id, "name": third_organization.name},
+        ]
 
     def test_can_update_organization(self, user_api_client, rando, organization, org_admin_rd):
         org_admin_rd.give_permission(rando, organization)
@@ -155,14 +189,20 @@ class TestUsersEndpointRBAC:
         r = auditor_api_client.get("/api/v1/users/")
         assert r.status_code == 200
 
+    def test_platform_auditor_global_role_does_not_report_org_memberships(
+        self, user_api_client, platform_auditor, organization
+    ):
+        r = user_api_client.get("/api/v1/users/me/")
+        assert r.status_code == 200
+        assert r.data["member_of_organizations"] == []
+
     def test_superuser_can_list_users(self, admin_api_client):
         r = admin_api_client.get("/api/v1/users/")
         assert r.status_code == 200
 
     def test_basic_user_can_access_me_endpoint(self, user_api_client, rando):
         """The /me action must remain accessible to any authenticated user."""
-        with patch("apps.core.gateway_queries.fetch_member_organizations", return_value=[]):
-            r = user_api_client.get("/api/v1/users/me/")
+        r = user_api_client.get("/api/v1/users/me/")
         assert r.status_code == 200
         assert r.data["username"] == rando.username
 

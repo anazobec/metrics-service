@@ -39,6 +39,11 @@ def org_admin_rd(db):
 
 
 @pytest.fixture
+def org_member_rd(db):
+    return RoleDefinition.objects.get(name="Organization Member")
+
+
+@pytest.fixture
 def team_admin_rd(db):
     return RoleDefinition.objects.get(name="Team Admin")
 

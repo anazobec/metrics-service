@@ -80,7 +80,7 @@ class UserViewSet(BaseViewSet):
         summary="Get current user details",
         description=(
             "Get currently logged in user's details, including a `member_of_organizations` "
-            "list read live from the gateway API (AAP-88670)."
+            "list from locally synced RBAC assignments (AAP-88670)."
         ),
         responses={200: UserMeSerializer},
     )
@@ -88,10 +88,9 @@ class UserViewSet(BaseViewSet):
     def me(self, request):
         """Return the profile of the currently authenticated user, plus their organization membership.
 
-        `member_of_organizations` comes from ``User.get_member_organizations``, which
-        reads directly from the gateway API (AAP-88670) to avoid gateway-resource-sync
-        lag, so it is only computed for the requesting user here since `me` only ever
-        returns the caller's own profile.
+        `member_of_organizations` comes from the locally synced RBAC assignments and
+        is only computed here for the requesting user, since `me` only ever returns
+        the caller's own profile.
         """
         serializer = self.get_serializer(request.user)
         data = serializer.data
@@ -99,7 +98,7 @@ class UserViewSet(BaseViewSet):
             data["member_of_organizations"] = request.user.get_member_organizations()
         except Exception:
             logger.exception(
-                "Failed to fetch organization membership from gateway API for user %s",
+                "Failed to read organization membership from local RBAC data for user %s",
                 request.user.username,
             )
             data["member_of_organizations"] = []

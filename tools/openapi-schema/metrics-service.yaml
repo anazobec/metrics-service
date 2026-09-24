@@ -7143,7 +7143,7 @@ paths:
     get:
       operationId: users_me_retrieve
       description: Get currently logged in user's details, including a `member_of_organizations`
-        list read live from the gateway API (AAP-88670).
+        list from locally synced RBAC assignments (AAP-88670).
       summary: Get current user details
       tags:
       - users

@@ -27,19 +27,22 @@ class User(AbstractDABUser):
             content_type=None,
         ).exists()
 
-    def get_member_organizations(self) -> list[dict]:
-        """Return organizations of which this user is a member, read live from the gateway API.
+    def get_member_organizations(self) -> list[dict[str, int | str]]:
+        """Return this user's explicitly assigned organization memberships from local RBAC data.
 
-        Calls the gateway's cross-service role-user-assignments API
-        (``apps.core.gateway_queries``) rather than the local gateway-resource-sync
-        copy (``Organization.access_qs``), to avoid sync lag for org membership
-        (AAP-88670): the gateway is the authoritative source, and
-        ``sync_resources_from_gateway`` only refreshes periodically, so a
-        locally-synced answer could be briefly stale.
+        DAB's resource sync keeps organization role assignments in metrics-service's
+        RBAC tables. Query the local permission evaluation model directly so global
+        superuser permissions do not make an unassigned user appear to belong to
+        every organization.
         """
-        from apps.core.gateway_queries import fetch_member_organizations
+        from ansible_base.rbac.models import get_evaluation_model
 
-        return fetch_member_organizations(self.username)
+        from apps.core.models import Organization
+
+        evaluation_model = get_evaluation_model(Organization)
+        organization_ids = evaluation_model.accessible_ids(Organization, self, "member_organization")
+        organizations = Organization.objects.filter(pk__in=organization_ids).order_by("pk").values("id", "name")
+        return list(organizations)
 
     def related_fields(self, request):
         return {}
