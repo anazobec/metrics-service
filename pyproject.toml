@@ -42,7 +42,7 @@ dependencies = [
     "packaging>=26.2", # Required for setuptools-scm during source builds
     "django-generate-series>=2026.2.1", # Required for generating time series data for dashboard report charts
     "urllib3~=2.7",
-    "pyjwt~=2.13",
+    "pyjwt~=2.15",
 ]
 
 [project.optional-dependencies]
