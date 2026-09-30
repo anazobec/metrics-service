@@ -1,6 +1,7 @@
 """ViewSet for dashboard collection status."""
 
 import json
+import logging
 
 from ansible_base.rbac.api.permissions import IsSystemAdminOrAuditor
 from drf_spectacular.utils import extend_schema, extend_schema_view, inline_serializer
@@ -13,26 +14,28 @@ from rest_framework.viewsets import ViewSet
 
 from apps.dashboard_reports.models import JobData
 from apps.dynamic_settings.models import Setting
-from apps.tasks.models import Task
+from apps.tasks.models import Task, TaskExecution
 from apps.tasks.task_groups import get_feature_enabled_from_db
+
+logger = logging.getLogger(__name__)
 
 
 @extend_schema_view(
     create=extend_schema(
-        summary="Toggle the show_gamification feature flag.",
-        description="Sets the runtime-toggleable show_gamification setting. Requires system admin or auditor "
+        summary="Toggle the show_leaderboard feature flag.",
+        description="Sets the runtime-toggleable show_leaderboard setting. Requires system admin or auditor "
         "permissions. Takes effect immediately without a service restart.",
         request=inline_serializer(
             name="DashboardCollectionPostRequest",
             fields={
-                "show_gamification": serializers.BooleanField(default=False),
+                "show_leaderboard": serializers.BooleanField(),
             },
         ),
         responses={
             200: inline_serializer(
                 name="DashboardCollectionPostResponse",
                 fields={
-                    "show_gamification": serializers.BooleanField(default=False),
+                    "show_leaderboard": serializers.BooleanField(),
                 },
             ),
         },
@@ -46,9 +49,10 @@ from apps.tasks.task_groups import get_feature_enabled_from_db
                 fields={
                     "enabled": serializers.BooleanField(),
                     "next_run": serializers.CharField(allow_null=True),
+                    "last_sync": serializers.DateTimeField(allow_null=True),
                     "initial_collection_status": serializers.CharField(allow_null=True),
                     "min_collection_timestamp": serializers.DateTimeField(allow_null=True),
-                    "show_gamification": serializers.BooleanField(),
+                    "show_leaderboard": serializers.BooleanField(),
                     "show_dashboard": serializers.BooleanField(),
                 },
             ),
@@ -61,23 +65,38 @@ class DashboardCollectionStatusViewSet(ViewSet):
     # User must be authenticated
     permission_classes = [IsAuthenticated]
 
+    @staticmethod
+    def _get_latest_completed_hourly_sync() -> TaskExecution | None:
+        # Tracks sync_dashboard_job_records (JobData), not sync_dashboard_host_summaries:
+        # the latter can silently skip records with no retry (see docs/dashboard-sync.md
+        # "Ordering constraint"), so a completed run there doesn't guarantee fresh data.
+        latest = None
+        try:
+            latest = TaskExecution.objects.filter(
+                status="completed",
+                task__function_name="sync_dashboard_job_records",
+            ).latest("completed_at")
+        except TaskExecution.DoesNotExist:
+            logger.debug("No sync found")
+        return latest
+
     def create(self, request: Request, *args, **kwargs) -> Response:
         is_system_admin_or_auditor = IsSystemAdminOrAuditor().has_permission(request, self)
         if not is_system_admin_or_auditor:
             raise PermissionDenied
 
-        new_show_gamification = request.data.get("show_gamification")
-        if not isinstance(new_show_gamification, bool):
-            raise ValidationError({"show_gamification": "Value must be a boolean: true/false"})
+        new_show_leaderboard = request.data.get("show_leaderboard")
+        if not isinstance(new_show_leaderboard, bool):
+            raise ValidationError({"show_leaderboard": "Value must be a boolean: true/false"})
 
         Setting.objects.update_or_create(
-            setting_key="SHOW_GAMIFICATION",
-            defaults={"current_value": json.dumps(new_show_gamification), "last_modified_by": request.user},
+            setting_key="SHOW_LEADERBOARD",
+            defaults={"current_value": json.dumps(new_show_leaderboard), "last_modified_by": request.user},
         )
 
         return Response(
             {
-                "show_gamification": new_show_gamification,
+                "show_leaderboard": new_show_leaderboard,
             }
         )
 
@@ -90,8 +109,9 @@ class DashboardCollectionStatusViewSet(ViewSet):
         """
         is_system_admin_or_auditor = IsSystemAdminOrAuditor().has_permission(request, self)
         enabled = get_feature_enabled_from_db("DASHBOARD_COLLECTION", default=True)
-        show_gamification = get_feature_enabled_from_db("SHOW_GAMIFICATION", default=False)
+        show_leaderboard = get_feature_enabled_from_db("SHOW_LEADERBOARD", default=True)
         show_dashboard = get_feature_enabled_from_db("SHOW_DASHBOARD", default=True) and is_system_admin_or_auditor
+        last_sync = None
 
         next_run = None
         initial_collection_status = None
@@ -99,6 +119,9 @@ class DashboardCollectionStatusViewSet(ViewSet):
 
         if enabled:
             min_collection_timestamp = JobData.min_timestamp()
+            latest_hourly_sync = self._get_latest_completed_hourly_sync()
+            if latest_hourly_sync is not None:
+                last_sync = latest_hourly_sync.completed_at
 
             # Incremental dashboard sync is driven by the hourly_unified_jobs hook,
             # so next_run reflects when that collector will next fire.
@@ -120,9 +143,10 @@ class DashboardCollectionStatusViewSet(ViewSet):
             {
                 "enabled": enabled,
                 "next_run": next_run,
+                "last_sync": last_sync,  # will be None if no sync was done yet
                 "initial_collection_status": initial_collection_status,
                 "min_collection_timestamp": min_collection_timestamp,
-                "show_gamification": show_gamification,  # toggle-able by admins/system-auditors
+                "show_leaderboard": show_leaderboard,  # toggle-able by admins/system-auditors
                 "show_dashboard": show_dashboard,  # only if user == admin
             }
         )

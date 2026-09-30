@@ -10,9 +10,15 @@ from rest_framework.test import APIRequestFactory
 
 from apps.dashboard_reports.urls import router
 from apps.dashboard_reports.viewsets.collection_status import DashboardCollectionStatusViewSet
+from apps.tasks.models import TaskExecution
 
 PATCH_FLAG = "apps.dashboard_reports.viewsets.collection_status.get_feature_enabled_from_db"
 PATCH_TASK = "apps.dashboard_reports.viewsets.collection_status.Task"
+PATCH_TASK_EXECUTION = "apps.dashboard_reports.viewsets.collection_status.TaskExecution"
+PATCH_LATEST_SYNC = (
+    "apps.dashboard_reports.viewsets.collection_status.DashboardCollectionStatusViewSet."
+    "_get_latest_completed_hourly_sync"
+)
 PATCH_PERM = "ansible_base.rbac.api.permissions.IsSystemAdminOrAuditor.has_permission"
 PATCH_MIN_TS = "apps.dashboard_reports.viewsets.collection_status.JobData.min_timestamp"
 PATCH_SETTING = "apps.dashboard_reports.viewsets.collection_status.Setting"
@@ -30,6 +36,12 @@ class TestDashboardCollectionStatusViewSet:
         with patch(PATCH_PERM, return_value=True):
             yield
 
+    @pytest.fixture(autouse=True)
+    def no_sync_by_default(self):
+        """Avoid a real DB hit in tests that don't care about last_sync."""
+        with patch(PATCH_LATEST_SYNC, return_value=None):
+            yield
+
     def _get(self):
         request = factory.get("/api/v1/dashboard_reports/collection_status/")
         request.user = MagicMock()
@@ -44,9 +56,10 @@ class TestDashboardCollectionStatusViewSet:
         assert response.data == {
             "enabled": False,
             "next_run": None,
+            "last_sync": None,
             "initial_collection_status": None,
             "min_collection_timestamp": None,
-            "show_gamification": False,
+            "show_leaderboard": False,
             "show_dashboard": False,
         }
         mock_task_class.objects.filter.assert_not_called()
@@ -88,9 +101,10 @@ class TestDashboardCollectionStatusViewSet:
         assert response.data == {
             "enabled": True,
             "next_run": None,
+            "last_sync": None,
             "initial_collection_status": None,
             "min_collection_timestamp": None,
-            "show_gamification": True,
+            "show_leaderboard": True,
             "show_dashboard": True,
         }
 
@@ -170,6 +184,74 @@ class TestDashboardCollectionStatusViewSet:
 
 
 @pytest.mark.unit
+class TestLastSync:
+    """Tests for last_sync in DashboardCollectionStatusViewSet.list()."""
+
+    @pytest.fixture(autouse=True)
+    def bypass_permissions(self):
+        with patch(PATCH_PERM, return_value=True):
+            yield
+
+    def _get(self):
+        request = factory.get("/api/v1/dashboard_reports/collection_status/")
+        request.user = MagicMock()
+        return view(request)
+
+    @patch(PATCH_MIN_TS, return_value=None)
+    @patch(PATCH_FLAG, return_value=False)
+    @patch(PATCH_TASK)
+    def test_not_queried_when_disabled(self, mock_task_class, mock_flag, mock_min_ts):
+        """_get_latest_completed_hourly_sync() is NOT called when DASHBOARD_COLLECTION is disabled."""
+        with patch(PATCH_LATEST_SYNC) as mock_latest_sync:
+            response = self._get()
+            mock_latest_sync.assert_not_called()
+        assert response.data["last_sync"] is None
+
+    @patch(PATCH_MIN_TS, return_value=None)
+    @patch(PATCH_FLAG, return_value=True)
+    @patch(PATCH_TASK)
+    def test_no_sync_yet_when_none_found(self, mock_task_class, mock_flag, mock_min_ts):
+        """last_sync is 'None' when no completed sync execution exists."""
+        mock_task_class.objects.filter.return_value.first.return_value = None
+        with patch(PATCH_LATEST_SYNC, return_value=None):
+            response = self._get()
+        assert response.data["last_sync"] is None
+
+    @patch(PATCH_MIN_TS, return_value=None)
+    @patch(PATCH_FLAG, return_value=True)
+    @patch(PATCH_TASK)
+    def test_returns_completed_at_of_latest_sync(self, mock_task_class, mock_flag, mock_min_ts):
+        """last_sync reflects the completed_at of the latest completed sync execution."""
+        mock_task_class.objects.filter.return_value.first.return_value = None
+        completed_at = datetime(2026, 9, 29, 11, 3, 6, tzinfo=UTC)
+        mock_execution = MagicMock(completed_at=completed_at)
+        with patch(PATCH_LATEST_SYNC, return_value=mock_execution):
+            response = self._get()
+        assert response.data["last_sync"] == completed_at
+
+    @patch(PATCH_TASK_EXECUTION)
+    def test_query_filters_on_completed_status_and_sync_function(self, mock_task_execution_class):
+        """The query filters on status=completed and function_name=sync_dashboard_job_records,
+        ordered by the most recent completed_at."""
+        mock_task_execution_class.DoesNotExist = TaskExecution.DoesNotExist
+        mock_qs = mock_task_execution_class.objects.filter.return_value
+        DashboardCollectionStatusViewSet._get_latest_completed_hourly_sync()
+        mock_task_execution_class.objects.filter.assert_called_once_with(
+            status="completed",
+            task__function_name="sync_dashboard_job_records",
+        )
+        mock_qs.latest.assert_called_once_with("completed_at")
+
+    @patch(PATCH_TASK_EXECUTION)
+    def test_returns_none_when_no_completed_execution_exists(self, mock_task_execution_class):
+        """DoesNotExist is caught and None is returned (no completed sync execution yet)."""
+        mock_task_execution_class.DoesNotExist = TaskExecution.DoesNotExist
+        mock_task_execution_class.objects.filter.return_value.latest.side_effect = TaskExecution.DoesNotExist
+        result = DashboardCollectionStatusViewSet._get_latest_completed_hourly_sync()
+        assert result is None
+
+
+@pytest.mark.unit
 class TestDashboardCollectionStatusURL:
     """Tests for URL registration and reversal."""
 
@@ -184,7 +266,7 @@ class TestDashboardCollectionStatusURL:
 
 @pytest.mark.unit
 class TestDashboardCollectionStatusCreate:
-    """Tests for DashboardCollectionStatusViewSet.create() (POST show_gamification toggle)."""
+    """Tests for DashboardCollectionStatusViewSet.create() (POST show_leaderboard toggle)."""
 
     def _post(self, data):
         request = factory.post("/api/v1/dashboard_reports/collection_status/", data, format="json")
@@ -195,52 +277,52 @@ class TestDashboardCollectionStatusCreate:
     def test_non_admin_forbidden(self, mock_perm):
         """Non admin/auditor users get 403 and no Setting write is attempted."""
         with patch(PATCH_SETTING) as mock_setting:
-            response = self._post({"show_gamification": True})
+            response = self._post({"show_leaderboard": True})
             mock_setting.objects.update_or_create.assert_not_called()
         assert response.status_code == 403
 
     @patch(PATCH_PERM, return_value=True)
     def test_non_boolean_value_rejected(self, mock_perm):
-        """Non-boolean show_gamification value returns 400 and does not touch the DB."""
+        """Non-boolean show_leaderboard value returns 400 and does not touch the DB."""
         with patch(PATCH_SETTING) as mock_setting:
-            response = self._post({"show_gamification": "true"})
+            response = self._post({"show_leaderboard": "true"})
             mock_setting.objects.update_or_create.assert_not_called()
         assert response.status_code == 400
-        assert "show_gamification" in response.data
+        assert "show_leaderboard" in response.data
 
     @patch(PATCH_PERM, return_value=True)
     def test_missing_value_rejected(self, mock_perm):
-        """Missing show_gamification key returns 400."""
+        """Missing show_leaderboard key returns 400."""
         response = self._post({})
         assert response.status_code == 400
 
     @patch(PATCH_PERM, return_value=True)
     def test_sets_flag_true(self, mock_perm):
-        """POST with True persists SHOW_GAMIFICATION=true via update_or_create."""
+        """POST with True persists SHOW_LEADERBOARD=true via update_or_create."""
         with patch(PATCH_SETTING) as mock_setting:
-            response = self._post({"show_gamification": True})
+            response = self._post({"show_leaderboard": True})
             mock_setting.objects.update_or_create.assert_called_once()
             _, kwargs = mock_setting.objects.update_or_create.call_args
-            assert kwargs["setting_key"] == "SHOW_GAMIFICATION"
+            assert kwargs["setting_key"] == "SHOW_LEADERBOARD"
             assert kwargs["defaults"]["current_value"] == json.dumps(True)
         assert response.status_code == 200
-        assert response.data == {"show_gamification": True}
+        assert response.data == {"show_leaderboard": True}
 
     @patch(PATCH_PERM, return_value=True)
     def test_sets_flag_false(self, mock_perm):
-        """POST with False persists SHOW_GAMIFICATION=false via update_or_create."""
+        """POST with False persists SHOW_LEADERBOARD=false via update_or_create."""
         with patch(PATCH_SETTING) as mock_setting:
-            response = self._post({"show_gamification": False})
+            response = self._post({"show_leaderboard": False})
             _, kwargs = mock_setting.objects.update_or_create.call_args
             assert kwargs["defaults"]["current_value"] == json.dumps(False)
         assert response.status_code == 200
-        assert response.data == {"show_gamification": False}
+        assert response.data == {"show_leaderboard": False}
 
     @patch(PATCH_PERM, return_value=True)
     def test_last_modified_by_set_to_request_user(self, mock_perm):
         """The requesting user is recorded as last_modified_by."""
         request = factory.post(
-            "/api/v1/dashboard_reports/collection_status/", {"show_gamification": True}, format="json"
+            "/api/v1/dashboard_reports/collection_status/", {"show_leaderboard": True}, format="json"
         )
         sentinel_user = MagicMock()
         request.user = sentinel_user
