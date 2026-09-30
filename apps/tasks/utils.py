@@ -558,10 +558,36 @@ def generic_collect_metrics(
             actual_collector_kwargs.pop("collection_time")
 
         collector = config["collector_func"](db=db_connection, **actual_collector_kwargs)
+        gather_started = timezone.now()
         raw_data = collector.gather()
+        gather_finished = timezone.now()
+
+        # Persist the raw pre-prepare() output for the analytics API (enabled collectors only).
+        # Best-effort and non-invasive: failures are swallowed inside the helper so the existing
+        # rollup path below is never affected. Lazy import avoids a tasks<->analytics import cycle.
+        from apps.analytics.persist import persist_analytics_payload
+
+        persist_analytics_payload(
+            collector_type,
+            raw_data,
+            since=actual_collector_kwargs.get("since"),
+            until=actual_collector_kwargs.get("until"),
+            started_at=gather_started,
+            finished_at=gather_finished,
+        )
 
         if post_collect_hook is not None:
             _run_post_collect_hook(post_collect_hook, raw_data, collector_type, task_execution_instance)
+
+        if not config.get("persist_to_hourly", True):
+            return create_task_result(
+                "success",
+                {
+                    "message": f"Persisted analytics-only collection for {collector_type}",
+                    "task_type": f"collect_{collector_type}",
+                    "collector_type": collector_type,
+                },
+            )
 
         rollup_data = config["rollup_processor"]().prepare(raw_data) if config["rollup_processor"] else raw_data
 
@@ -578,19 +604,21 @@ def generic_collect_metrics(
     except Exception as e:
         logger.exception(f"Failed to collect {collector_type} {collection_mode} metrics: {str(e)}")
 
-        # Store failed collection for audit trail (critical for diagnosing missing rollup data)
-        with contextlib.suppress(Exception):
-            HourlyMetricsCollection.objects.update_or_create(
-                collector_type=collector_type,
-                collection_timestamp=timestamp,
-                defaults={
-                    "raw_data": {},
-                    "status": "failed",
-                    "error_message": str(e),
-                    "collection_parameters": collection_params,
-                    "task_execution": task_execution_instance,
-                },
-            )
+        # Store failed collection for audit trail (critical for diagnosing missing rollup data).
+        # Analytics-only collectors deliberately do not use the hourly collection table.
+        if config.get("persist_to_hourly", True):
+            with contextlib.suppress(Exception):
+                HourlyMetricsCollection.objects.update_or_create(
+                    collector_type=collector_type,
+                    collection_timestamp=timestamp,
+                    defaults={
+                        "raw_data": {},
+                        "status": "failed",
+                        "error_message": str(e),
+                        "collection_parameters": collection_params,
+                        "task_execution": task_execution_instance,
+                    },
+                )
 
         return create_task_result(
             "error",

@@ -148,6 +148,313 @@ paths:
           description: ''
       x-ai-description: Retrieve a audit trail entry for tracking system changes and
         user actions
+  /api/v1/analytics/:
+    get:
+      operationId: analytics_retrieve
+      description: |
+        List the collectors the analytics API exposes (discovery entry point).
+
+        Response fields:
+
+        - `collectors`: list of enabled collector descriptions.
+        - `name`: public `group.function` collector name.
+        - `description`: summary of the collector's output.
+        - `mode`: `hourly`, `daily`, or `snapshot`.
+        - `accepts_since_until`: whether collection windows are supported.
+        - `rows_url`: URL for stored collection envelopes.
+        - `collect_url`: URL for triggering an on-demand collection task.
+      summary: Discover enabled analytics collectors.
+      tags:
+      - analytics
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsRootResponse'
+              examples:
+                EnabledAnalyticsCollectors:
+                  value:
+                    collectors:
+                    - name: controller.unified_jobs_dashboard
+                      description: Job executions, including status and timing, organization,
+                        inventory, project, template, execution environment, launcher,
+                        labels, and host count.
+                      mode: hourly
+                      accepts_since_until: true
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.unified_jobs_dashboard/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.unified_jobs_dashboard/collect/
+                    - name: controller.job_host_summary_service
+                      description: Per-job host results and counts, with host, job,
+                        template, inventory, organization, and project context.
+                      mode: hourly
+                      accepts_since_until: true
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.job_host_summary_service/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.job_host_summary_service/collect/
+                    - name: controller.credentials_service
+                      description: Distinct managed credential types used by jobs
+                        completed in the collection window.
+                      mode: hourly
+                      accepts_since_until: true
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.credentials_service/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.credentials_service/collect/
+                    - name: controller.main_jobevent_service
+                      description: Selected job events for jobs completed in the window,
+                        including event actions, task/play/role, host, result flags,
+                        warnings, and deprecations.
+                      mode: hourly
+                      accepts_since_until: true
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.main_jobevent_service/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.main_jobevent_service/collect/
+                    - name: controller.events_table
+                      description: Raw job events modified in the window, including
+                        event details, playbook statistics, task/play/role, host,
+                        timing, warnings, and deprecations.
+                      mode: hourly
+                      accepts_since_until: true
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.events_table/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.events_table/collect/
+                    - name: controller.workflow_job_node_table
+                      description: Workflow job node executions, their job/template/workflow/inventory
+                        references, and success, failure, and always edges.
+                      mode: hourly
+                      accepts_since_until: true
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.workflow_job_node_table/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.workflow_job_node_table/collect/
+                    - name: controller.query_info
+                      description: 'Collection metadata: requested bounds and collection
+                        type; it does not query the Controller database.'
+                      mode: hourly
+                      accepts_since_until: true
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.query_info/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.query_info/collect/
+                    - name: controller.execution_environments
+                      description: Execution environment records, including image,
+                        description, ownership, organization, credential, management,
+                        and pull settings.
+                      mode: snapshot
+                      accepts_since_until: false
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.execution_environments/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.execution_environments/collect/
+                    - name: controller.config
+                      description: Selected Controller settings and license details,
+                        plus Controller and metrics-utility versions and runtime platform
+                        metadata.
+                      mode: snapshot
+                      accepts_since_until: false
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.config/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.config/collect/
+                    - name: controller.controller_version_service
+                      description: Distinct versions reported by enabled control and
+                        hybrid Controller instances.
+                      mode: snapshot
+                      accepts_since_until: false
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.controller_version_service/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.controller_version_service/collect/
+                    - name: controller.table_metadata
+                      description: Estimated row counts and table, index, and total
+                        sizes for the job event, unified job, and job host summary
+                        tables.
+                      mode: snapshot
+                      accepts_since_until: false
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.table_metadata/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.table_metadata/collect/
+                    - name: controller.feature_flags_service
+                      description: Enabled boolean platform feature flags and their
+                        descriptions, support levels, toggle types, and visibility.
+                      mode: snapshot
+                      accepts_since_until: false
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.feature_flags_service/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.feature_flags_service/collect/
+                    - name: controller.counts
+                      description: Counts of Controller objects, inventories by kind,
+                        non-sync jobs, active hosts and sessions, running and pending
+                        jobs, and database connections.
+                      mode: snapshot
+                      accepts_since_until: false
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.counts/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.counts/collect/
+                    - name: controller.cred_type_counts
+                      description: Credential counts grouped by credential type, including
+                        type name and whether the type is managed.
+                      mode: snapshot
+                      accepts_since_until: false
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.cred_type_counts/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.cred_type_counts/collect/
+                    - name: controller.host_metric_summary_monthly_table
+                      description: Monthly host capacity and usage summaries, including
+                        hosts added, deleted, and indirectly managed.
+                      mode: snapshot
+                      accepts_since_until: false
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.host_metric_summary_monthly_table/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.host_metric_summary_monthly_table/collect/
+                    - name: controller.instance_info
+                      description: Controller instance topology, version, capacity,
+                        CPU, memory, node type, enablement, and current and remaining
+                        capacity.
+                      mode: snapshot
+                      accepts_since_until: false
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.instance_info/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.instance_info/collect/
+                    - name: controller.inventory_counts
+                      description: Inventory names and kinds with host and source
+                        counts, source details, and smart inventory entries.
+                      mode: snapshot
+                      accepts_since_until: false
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.inventory_counts/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.inventory_counts/collect/
+                    - name: controller.org_counts
+                      description: Organization names with distinct user and team
+                        counts.
+                      mode: snapshot
+                      accepts_since_until: false
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.org_counts/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.org_counts/collect/
+                    - name: controller.projects_by_scm_type
+                      description: Project counts grouped by source-control type,
+                        with empty types reported as manual.
+                      mode: snapshot
+                      accepts_since_until: false
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.projects_by_scm_type/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.projects_by_scm_type/collect/
+                    - name: controller.unified_job_template_table
+                      description: Unified job template identity, type, execution
+                        environment, ownership, last/current/next job references,
+                        scheduling, and status.
+                      mode: snapshot
+                      accepts_since_until: false
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.unified_job_template_table/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.unified_job_template_table/collect/
+                    - name: controller.workflow_job_template_node_table
+                      description: Workflow job template node definitions, inventory
+                        and template references, convergence settings, and success,
+                        failure, and always edges.
+                      mode: snapshot
+                      accepts_since_until: false
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.workflow_job_template_node_table/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.workflow_job_template_node_table/collect/
+                    - name: controller.main_host
+                      description: Enabled inventory hosts with inventory and organization
+                        context, last automation time, connection variables, and selected
+                        hardware and system facts.
+                      mode: snapshot
+                      accepts_since_until: false
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.main_host/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.main_host/collect/
+                    - name: controller.main_host_daily
+                      description: Enabled hosts created or modified in the window,
+                        with the same inventory, organization, automation, connection,
+                        and selected fact data as main_host.
+                      mode: daily
+                      accepts_since_until: true
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.main_host_daily/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.main_host_daily/collect/
+                    - name: controller.main_hostmetric
+                      description: Host automation and deletion metrics, counters,
+                        inventory usage, and selected host identity and connection
+                        facts.
+                      mode: daily
+                      accepts_since_until: true
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.main_hostmetric/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.main_hostmetric/collect/
+                  summary: Enabled analytics collectors
+          description: ''
+      x-ai-description: Retrieve single analytic
+  /api/v1/analytics/{collector}/:
+    get:
+      operationId: analytics_list
+      description: |
+        The linked collector row endpoints return paginated collection envelopes. Each row contains:
+
+        - `id`: unique stored collection row identifier.
+        - `collector`: public `group.function` collector name.
+        - `source`: originating platform component, normally `local`.
+        - `since`: inclusive start bound passed to the collector, or null for an open bound or snapshot.
+        - `until`: exclusive end bound passed to the collector, or null for an open bound or snapshot.
+        - `started_at`: timestamp when collection started.
+        - `finished_at`: timestamp when collection finished.
+        - `payload`: raw JSON output from the collector before rollup preparation.
+      parameters:
+      - in: path
+        name: collector
+        schema:
+          type: string
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: since
+        schema:
+          type: string
+          format: date-time
+        description: Return rows whose collection window overlaps this inclusive bound.
+      - in: query
+        name: until
+        schema:
+          type: string
+          format: date-time
+        description: Return rows whose collection window overlaps this exclusive bound.
+      tags:
+      - analytics
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAnalyticsPayloadList'
+          description: ''
+      x-ai-description: List all analytics
+  /api/v1/analytics/{collector}/collect/:
+    post:
+      operationId: analytics_collect_create
+      description: Create a pending task and return its details without claiming a
+        payload row.
+      parameters:
+      - in: path
+        name: collector
+        schema:
+          type: string
+        required: true
+      tags:
+      - analytics
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyticsCollectRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AnalyticsCollectRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AnalyticsCollectRequestRequest'
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsCollectResponse'
+          description: ''
+      x-ai-description: Create new collect for an analytic
   /api/v1/dashboard_reports/collection_status/:
     get:
       operationId: dashboard_reports_collection_status_list
@@ -735,8 +1042,7 @@ paths:
       - in: path
         name: id
         schema:
-          type: integer
-        description: A unique integer value identifying this Job Data.
+          type: string
         required: true
       tags:
       - dashboard_reports
@@ -1084,8 +1390,7 @@ paths:
       - in: path
         name: id
         schema:
-          type: integer
-        description: A unique integer value identifying this Subscription Cost.
+          type: string
         required: true
       tags:
       - dashboard_reports
@@ -1119,8 +1424,7 @@ paths:
       - in: path
         name: id
         schema:
-          type: integer
-        description: A unique integer value identifying this Subscription Cost.
+          type: string
         required: true
       tags:
       - dashboard_reports
@@ -7378,6 +7682,89 @@ components:
       - rank
       - runs
       - username
+    AnalyticsCollectRequestRequest:
+      type: object
+      properties:
+        since:
+          type: string
+          format: date-time
+          nullable: true
+          description: Collection start; omitted values use the mode default.
+        until:
+          type: string
+          format: date-time
+          nullable: true
+          description: Collection end; omitted values use the mode default.
+    AnalyticsCollectResponse:
+      type: object
+      properties:
+        task_id:
+          type: integer
+        task_url:
+          type: string
+          format: uri
+        collector:
+          type: string
+        task_data:
+          type: object
+          additionalProperties: {}
+      required:
+      - collector
+      - task_data
+      - task_id
+      - task_url
+    AnalyticsPayload:
+      type: object
+      description: Serialise one stored raw collection envelope.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        collector:
+          type: string
+          readOnly: true
+          description: Collector name (collector_type / API path segment)
+        source:
+          type: string
+          readOnly: true
+          description: Originating platform component, such as local, controller,
+            eda, or hub.
+        since:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+          description: '`since` passed to the collector (inclusive), if any'
+        until:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+          description: '`until` passed to the collector (exclusive), if any'
+        started_at:
+          type: string
+          format: date-time
+          readOnly: true
+          description: When collection (gather) started
+        finished_at:
+          type: string
+          format: date-time
+          readOnly: true
+          description: When collection (gather) finished
+        payload:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+          description: Raw pre-prepare() gather() output, JSON-serialisable
+    AnalyticsRootResponse:
+      type: object
+      properties:
+        collectors:
+          type: array
+          items:
+            $ref: '#/components/schemas/CollectorDiscovery'
+      required:
+      - collectors
     AutomationStreak:
       type: object
       description: Daily successful-run series plus the current consecutive-day streak.
@@ -7417,6 +7804,30 @@ components:
           $ref: '#/components/schemas/SegmentSend'
       required:
       - database
+    CollectorDiscovery:
+      type: object
+      description: Serialize one enabled collector and its hyperlinked API endpoints.
+      properties:
+        name:
+          type: string
+          readOnly: true
+        description:
+          type: string
+          readOnly: true
+        mode:
+          type: string
+          readOnly: true
+        accepts_since_until:
+          type: boolean
+          readOnly: true
+        rows_url:
+          type: string
+          format: uri
+          readOnly: true
+        collect_url:
+          type: string
+          format: uri
+          readOnly: true
     DABContentType:
       type: object
       properties:
@@ -8040,6 +8451,29 @@ components:
           description: The organization description.
       required:
       - name
+    PaginatedAnalyticsPayloadList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsPayload'
     PaginatedDABContentTypeList:
       type: object
       required:

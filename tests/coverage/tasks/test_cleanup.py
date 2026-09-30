@@ -211,6 +211,54 @@ def test_cleanup_metrics_data_deletes_old_sent_payload():
     assert not AnonymizedMetricsPayload.objects.filter(pk=payload.pk).exists()
 
 
+@pytest.mark.unit
+@pytest.mark.django_db
+def test_cleanup_metrics_data_deletes_old_analytics_payload():
+    from apps.analytics.models import AnalyticsPayload
+    from apps.tasks.cleanup.cleanup_metrics_data import cleanup_metrics_data
+
+    now = timezone.now()
+    row = AnalyticsPayload.objects.create(collector="controller.config", started_at=now, finished_at=now, payload={})
+    AnalyticsPayload.objects.filter(pk=row.pk).update(created=timezone.now() - timedelta(days=400))
+
+    result = cleanup_metrics_data(analytics_retention_days=90)
+    assert result["status"] == "success"
+    assert result["results"]["analytics_payloads"]["deleted"] >= 1
+    assert not AnalyticsPayload.objects.filter(pk=row.pk).exists()
+
+
+@pytest.mark.unit
+@pytest.mark.django_db
+def test_cleanup_metrics_data_keeps_recent_analytics_payload():
+    from apps.analytics.models import AnalyticsPayload
+    from apps.tasks.cleanup.cleanup_metrics_data import cleanup_metrics_data
+
+    now = timezone.now()
+    row = AnalyticsPayload.objects.create(collector="controller.config", started_at=now, finished_at=now, payload={})
+
+    result = cleanup_metrics_data(analytics_retention_days=90)
+    assert result["status"] == "success"
+    assert result["results"]["analytics_payloads"]["deleted"] == 0
+    assert AnalyticsPayload.objects.filter(pk=row.pk).exists()
+
+
+@pytest.mark.unit
+@pytest.mark.django_db
+def test_cleanup_metrics_data_dry_run_keeps_old_analytics_payload():
+    from apps.analytics.models import AnalyticsPayload
+    from apps.tasks.cleanup.cleanup_metrics_data import cleanup_metrics_data
+
+    now = timezone.now()
+    row = AnalyticsPayload.objects.create(collector="controller.config", started_at=now, finished_at=now, payload={})
+    AnalyticsPayload.objects.filter(pk=row.pk).update(created=timezone.now() - timedelta(days=400))
+
+    result = cleanup_metrics_data(analytics_retention_days=90, dry_run=True)
+    assert result["status"] == "success"
+    assert result["results"]["analytics_payloads"]["found"] >= 1
+    assert result["results"]["analytics_payloads"]["deleted"] == 0
+    assert AnalyticsPayload.objects.filter(pk=row.pk).exists()
+
+
 # ---------------------------------------------------------------------------
 # cleanup_activitystream
 # ---------------------------------------------------------------------------

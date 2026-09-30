@@ -34,6 +34,7 @@ project_applications = [
     "apps.dynamic_settings",
     "apps.tasks",
     "apps.dashboard_reports",  # Dashboard data for automation-reports integration
+    "apps.analytics",  # Customer-facing BYO-BI analytics API (ANSTRAT-1587)
 ]
 
 # Final state of the INSTALLED_APPS that will merge with the rest of the settings

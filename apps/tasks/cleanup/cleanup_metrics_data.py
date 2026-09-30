@@ -5,6 +5,7 @@ Retention policies:
 - Hourly collections: 7 days
 - Daily summaries: 30 days
 - Anonymized payloads: 30 days (or 7 days after sent)
+- Analytics payloads: 90 days
 """
 
 import logging
@@ -26,22 +27,26 @@ def cleanup_metrics_data(**kwargs) -> dict[str, Any]:
     - Hourly collections: 7 days
     - Daily summaries: 30 days
     - Anonymized payloads: 30 days (or 7 days after sent)
+    - Analytics payloads: 90 days
 
     Args:
         **kwargs: Task data containing:
             - hourly_retention_days (int): Days to keep hourly data (default: 7)
             - daily_retention_days (int): Days to keep daily summaries (default: 30)
             - payload_retention_days (int): Days to keep sent payloads (default: 7)
+            - analytics_retention_days (int): Days to keep analytics payloads (default: 90)
             - dry_run (bool): If true, only count without deleting (default: False)
 
     Returns:
         dict: Task result with cleanup statistics
     """
+    from apps.analytics.models import AnalyticsPayload
     from apps.tasks.models import AnonymizedMetricsPayload, DailyMetricsSummary, HourlyMetricsCollection
 
     hourly_retention_days = kwargs.get("hourly_retention_days", 7)
     daily_retention_days = kwargs.get("daily_retention_days", 30)
     payload_retention_days = kwargs.get("payload_retention_days", 7)
+    analytics_retention_days = kwargs.get("analytics_retention_days", 90)
     dry_run = kwargs.get("dry_run", False)
 
     log_task_execution("cleanup_metrics_data", "processing", f"Cleaning up metrics data (dry_run={dry_run})")
@@ -50,6 +55,7 @@ def cleanup_metrics_data(**kwargs) -> dict[str, Any]:
         "hourly_collections": {"found": 0, "deleted": 0},
         "daily_summaries": {"found": 0, "deleted": 0},
         "anonymized_payloads": {"found": 0, "deleted": 0},
+        "analytics_payloads": {"found": 0, "deleted": 0},
     }
 
     try:
@@ -91,6 +97,16 @@ def cleanup_metrics_data(**kwargs) -> dict[str, Any]:
             unsent_deleted, _ = old_unsent_payloads.delete()
             results["anonymized_payloads"]["deleted"] = sent_deleted + unsent_deleted
 
+        # Cleanup analytics payloads (BYO-BI raw collector output) older than retention period.
+        # Keyed on `created` (row age), not `finished_at`, which may be null for incomplete rows.
+        analytics_cutoff = now - timedelta(days=analytics_retention_days)
+        old_analytics = AnalyticsPayload.objects.filter(created__lt=analytics_cutoff)
+        results["analytics_payloads"]["found"] = old_analytics.count()
+
+        if not dry_run and results["analytics_payloads"]["found"] > 0:
+            deleted_count, _ = old_analytics.delete()
+            results["analytics_payloads"]["deleted"] = deleted_count
+
         log_task_execution("cleanup_metrics_data", "completed", f"Cleanup complete: {results}")
 
         return create_task_result(
@@ -102,6 +118,7 @@ def cleanup_metrics_data(**kwargs) -> dict[str, Any]:
                     "hourly_days": hourly_retention_days,
                     "daily_days": daily_retention_days,
                     "payload_days": payload_retention_days,
+                    "analytics_days": analytics_retention_days,
                 },
                 "results": results,
             },

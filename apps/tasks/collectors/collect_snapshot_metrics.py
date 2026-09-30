@@ -32,9 +32,19 @@ def _get_snapshot_collectors():
     from metrics_utility.library.collectors.controller import (
         config,
         controller_version_service,
+        counts,
+        cred_type_counts,
         execution_environments,
         feature_flags_service,
+        host_metric_summary_monthly_table,
+        instance_info,
+        inventory_counts,
+        main_host,
+        org_counts,
+        projects_by_scm_type,
         table_metadata,
+        unified_job_template_table,
+        workflow_job_template_node_table,
     )
 
     # Registry mapping collector_type to (collector_func, rollup_processor_class)
@@ -65,6 +75,66 @@ def _get_snapshot_collectors():
             "rollup_processor": TableMetadataAnonymizedRollup,
             "description": "Table metadata snapshot",
         },
+        "main_host": {
+            "collector_func": main_host,
+            "rollup_processor": None,
+            "persist_to_hourly": False,
+            "description": "Current host inventory snapshot",
+        },
+        "counts": {
+            "collector_func": counts,
+            "rollup_processor": None,
+            "persist_to_hourly": False,
+            "description": "Controller object counts snapshot",
+        },
+        "cred_type_counts": {
+            "collector_func": cred_type_counts,
+            "rollup_processor": None,
+            "persist_to_hourly": False,
+            "description": "Credential type counts snapshot",
+        },
+        "host_metric_summary_monthly_table": {
+            "collector_func": host_metric_summary_monthly_table,
+            "rollup_processor": None,
+            "persist_to_hourly": False,
+            "description": "Monthly host metric summary snapshot",
+        },
+        "instance_info": {
+            "collector_func": instance_info,
+            "rollup_processor": None,
+            "persist_to_hourly": False,
+            "description": "Controller instance information snapshot",
+        },
+        "inventory_counts": {
+            "collector_func": inventory_counts,
+            "rollup_processor": None,
+            "persist_to_hourly": False,
+            "description": "Inventory counts snapshot",
+        },
+        "org_counts": {
+            "collector_func": org_counts,
+            "rollup_processor": None,
+            "persist_to_hourly": False,
+            "description": "Organization counts snapshot",
+        },
+        "projects_by_scm_type": {
+            "collector_func": projects_by_scm_type,
+            "rollup_processor": None,
+            "persist_to_hourly": False,
+            "description": "Project counts by SCM type snapshot",
+        },
+        "unified_job_template_table": {
+            "collector_func": unified_job_template_table,
+            "rollup_processor": None,
+            "persist_to_hourly": False,
+            "description": "Unified job template snapshot",
+        },
+        "workflow_job_template_node_table": {
+            "collector_func": workflow_job_template_node_table,
+            "rollup_processor": None,
+            "persist_to_hourly": False,
+            "description": "Workflow job template node snapshot",
+        },
     }
 
 
@@ -74,7 +144,8 @@ def collect_snapshot_metrics(**kwargs) -> dict[str, Any]:
 
     This function handles all snapshot collectors that gather current
     state data (not time-series). It collects raw data, computes rollup
-    statistics, and stores only the rollup in HourlyMetricsCollection.
+    statistics, and stores the rollup in HourlyMetricsCollection. Raw analytics-only
+    collectors are persisted in AnalyticsPayload instead and do not create an hourly row.
 
     Args:
         **kwargs: Task data containing:

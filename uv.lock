@@ -114,15 +114,6 @@ wheels = [
 ]
 
 [[package]]
-name = "backoff"
-version = "2.2.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/47/d7/5bbeb12c44d7c4f2fb5b56abce497eb5ed9f34d85701de869acedd602619/backoff-2.2.1.tar.gz", hash = "sha256:03f829f5bb1923180821643f8753b0502c3b682293992485b0eef2807afa5cba", size = 17001, upload-time = "2022-10-05T19:19:32.061Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/df/73/b6e24bd22e6720ca8ee9a85a0c4a2971af8497d8f3193fa05390cbd46e09/backoff-2.2.1-py3-none-any.whl", hash = "sha256:63579f9a0628e06278f7e47b7d7d5b6ce20dc65c5e96a6f3ca99a6adca0396e8", size = 15148, upload-time = "2022-10-05T19:19:30.546Z" },
-]
-
-[[package]]
 name = "boto3"
 version = "1.35.96"
 source = { registry = "https://pypi.org/simple" }
@@ -936,7 +927,7 @@ dev = [
 
 [[package]]
 name = "metrics-utility"
-version = "0.8.20260818"
+version = "0.8.20260927"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "boto3" },
@@ -949,12 +940,11 @@ dependencies = [
     { name = "pandas" },
     { name = "psycopg" },
     { name = "requests" },
-    { name = "segment-analytics-python" },
     { name = "setuptools" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a8/2f/35cf5824bdf3dc8671e3080e3b9ec5be798d9121dbf6a0dad9a18aed6f7c/metrics_utility-0.8.20260818.tar.gz", hash = "sha256:b1a11f6a9ebe3338e36fb5f2b8d8f66e460422222ebbc3bba6975b4a3124f83f", size = 1215015, upload-time = "2026-08-18T20:56:30.275Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/82/e6/60d9ca03a75508584a07b9b8a5654588576218260899466c7562f3e415e6/metrics_utility-0.8.20260927.tar.gz", hash = "sha256:232a35b55227defe691afd4ec513af60facfdc165e5863cc4810c8b614d19265", size = 1217221, upload-time = "2026-09-27T02:12:22.255Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/de/9b/983a9bfc5379d235c9d6c2f2feaa7d0b8cebc84dccdcf5c1ccd58bdeaca2/metrics_utility-0.8.20260818-py3-none-any.whl", hash = "sha256:8cf7ec1f6c4dd7de109c9ab328b1912e3548f4739fe1ee9082e16eee12c9310c", size = 611871, upload-time = "2026-08-18T20:56:28.7Z" },
+    { url = "https://files.pythonhosted.org/packages/29/f3/dd7c541dacfc5307a3518d5c4df5c83e58a1d56df3cb55d304b4ed15b95b/metrics_utility-0.8.20260927-py3-none-any.whl", hash = "sha256:f8e3dae4656a8a33678230a28f32a9bd6230386a8f6a7292e986568acbe043af", size = 612829, upload-time = "2026-09-27T02:12:20.517Z" },
 ]
 
 [[package]]
@@ -1574,21 +1564,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c0/0a/1cdbabf9edd0ea7747efdf6c9ab4e7061b085aa7f9bfc36bb1601563b069/s3transfer-0.10.4.tar.gz", hash = "sha256:29edc09801743c21eb5ecbc617a152df41d3c287f67b615f73e5f750583666a7", size = 145287, upload-time = "2024-11-20T21:06:05.981Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/66/05/7957af15543b8c9799209506df4660cba7afc4cf94bfb60513827e96bed6/s3transfer-0.10.4-py3-none-any.whl", hash = "sha256:244a76a24355363a68164241438de1b72f8781664920260c48465896b712a41e", size = 83175, upload-time = "2024-11-20T21:06:03.961Z" },
-]
-
-[[package]]
-name = "segment-analytics-python"
-version = "2.3.6"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "backoff" },
-    { name = "pyjwt" },
-    { name = "python-dateutil" },
-    { name = "requests" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/8a/7f/74dd70484cc33eb6b49499ac4afbc1ca9bbac40d0dee5712f75fb77b0c62/segment_analytics_python-2.3.6.tar.gz", hash = "sha256:b07779d90432399fdd08f8cbeb483139cab862b5dca1bb3f0711f415def776a8", size = 35997, upload-time = "2026-04-07T17:16:44.03Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a5/5f/487b415925aac0f232a8aaae1f372f39ae13ca46207d923c4762efdddae5/segment_analytics_python-2.3.6-py2.py3-none-any.whl", hash = "sha256:a8c5c0f542be3be39aa57cd77e7e6b85b2a3c348174bc1192a296aeb81626594", size = 33477, upload-time = "2026-04-07T17:16:42.853Z" },
 ]
 
 [[package]]

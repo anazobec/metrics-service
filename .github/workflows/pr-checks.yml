@@ -117,9 +117,7 @@ jobs:
           METRICS_SERVICE_DATABASES__default__NAME: metrics_service
           METRICS_SERVICE_DATABASES__default__OPTIONS__sslmode: disable
         run: |
-          mkdir -p tools/openapi-schema
-          uv run --frozen python manage.py spectacular --file tools/openapi-schema/metrics-service.yaml
-          uv run --frozen python manage.py spectacular --format openapi-json --file tools/openapi-schema/metrics-service.json
+          bash tools/generate-openapi.sh
           git diff --exit-code -- tools/openapi-schema/metrics-service.yaml
           git diff --exit-code -- tools/openapi-schema/metrics-service.json
 

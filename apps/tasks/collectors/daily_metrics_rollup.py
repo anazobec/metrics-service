@@ -117,6 +117,8 @@ def _merge_hourly_rollups(collections_by_type: dict[str, list]) -> tuple[dict, l
         "main_jobevent_service": EventModulesAnonymizedRollup(),
         "unified_jobs": JobsAnonymizedRollup(),
     }
+    # events_table, workflow_job_node_table, and query_info are raw analytics collectors.
+    # They intentionally have no entry here because they do not produce anonymized rollup data.
 
     # Daily collectors expect 1 collection per day.
     # Includes both snapshot collectors and daily time-range collectors.
@@ -128,6 +130,11 @@ def _merge_hourly_rollups(collections_by_type: dict[str, list]) -> tuple[dict, l
         "task_executions_service": TaskExecutionsAnonymizedRollup(),
         "indirect_managed_nodes": IndirectManagedNodesAnonymizedRollup(),
     }
+    # config is handled separately, while the remaining raw analytics collectors are intentionally
+    # absent because they do not produce anonymized rollup data:
+    # main_host, counts, cred_type_counts, host_metric_summary_monthly_table, instance_info,
+    # inventory_counts, org_counts, projects_by_scm_type, unified_job_template_table,
+    # workflow_job_template_node_table, main_host_daily, and main_hostmetric.
 
     # Merge hourly rollups into daily rollups
     daily_rollup = {}
@@ -184,16 +191,27 @@ def _save_daily_summary(
     """
     from apps.tasks.models import DailyMetricsSummary, HourlyMetricsCollection
 
-    # Build hourly collection IDs map
+    # Keep raw analytics collections out of the daily summary. They may share the collection
+    # table, but only collector types present in the anonymized rollup belong in this summary.
     hourly_collection_ids = {
-        collector_type: [c.id for c in collections] for collector_type, collections in collections_by_type.items()
+        collector_type: [c.id for c in collections]
+        for collector_type, collections in collections_by_type.items()
+        if collector_type in daily_rollup
     }
 
-    # Calculate count from the IDs we actually processed
+    # Mark every collected record as processed, including raw analytics records that were not
+    # included in the summary, so they are not reconsidered by a later rollup.
     all_processed_ids = []
     for ids_list in hourly_collection_ids.values():
         all_processed_ids.extend(ids_list)
-    hourly_collections_count = len(all_processed_ids)
+    raw_only_ids = [
+        c.id
+        for collector_type, collections in collections_by_type.items()
+        if collector_type not in daily_rollup
+        for c in collections
+    ]
+    all_processed_ids.extend(raw_only_ids)
+    hourly_collections_count = sum(len(ids_list) for ids_list in hourly_collection_ids.values())
 
     # Create or update DailyMetricsSummary
     daily_summary, created = DailyMetricsSummary.objects.update_or_create(

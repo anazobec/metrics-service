@@ -18,6 +18,8 @@ from django.utils import timezone
 from apps.tasks.collectors.daily_metrics_rollup import (
     _collect_and_group_hourly_collections,
     _merge_collects,
+    _merge_hourly_rollups,
+    _save_daily_summary,
 )
 
 
@@ -158,3 +160,70 @@ class TestCollectAndGroupHourlyCollections:
         # Assert
         assert len(collections_by_type) == 1
         assert "job_host_summary_service" in collections_by_type
+
+
+@pytest.mark.unit
+def test_raw_only_collectors_are_not_processed_by_rollup(monkeypatch):
+    """Raw analytics collectors should not be included in anonymized rollups."""
+    import importlib
+
+    rollup_module = importlib.import_module("apps.tasks.collectors.daily_metrics_rollup")
+    monkeypatch.setattr(
+        rollup_module,
+        "_merge_collects",
+        lambda collections, processor: {},
+    )
+    raw_collectors = {
+        "events_table",
+        "workflow_job_node_table",
+        "query_info",
+        "main_host",
+        "counts",
+        "cred_type_counts",
+        "host_metric_summary_monthly_table",
+        "instance_info",
+        "inventory_counts",
+        "org_counts",
+        "projects_by_scm_type",
+        "unified_job_template_table",
+        "workflow_job_template_node_table",
+        "main_host_daily",
+        "main_hostmetric",
+    }
+
+    daily_rollup, missing_hours = _merge_hourly_rollups({collector: [{}] for collector in raw_collectors})
+
+    assert not raw_collectors & daily_rollup.keys()
+    assert not any(collector in missing for collector in raw_collectors for missing in missing_hours)
+
+
+@pytest.mark.unit
+@pytest.mark.django_db
+def test_raw_only_collections_are_not_attached_to_daily_summary(hourly_collection_factory):
+    """Raw analytics collections are processed but are not referenced by the daily summary."""
+    rollup_collection = hourly_collection_factory(collector_type="unified_jobs")
+    raw_collection = hourly_collection_factory(collector_type="events_table")
+
+    summary, _, count = _save_daily_summary(
+        summary_date=date(2024, 1, 15),
+        daily_rollup={"unified_jobs": {}},
+        collections_by_type={
+            "unified_jobs": [rollup_collection],
+            "events_table": [raw_collection],
+        },
+        config_data={},
+        missing_hours=[],
+        execution_id=None,
+    )
+
+    assert count == 1
+    assert summary.hourly_collection_ids == {"unified_jobs": [rollup_collection.id]}
+    assert list(summary.get_hourly_collections().values_list("id", flat=True)) == [rollup_collection.id]
+
+    from apps.tasks.models import HourlyMetricsCollection
+
+    assert set(
+        HourlyMetricsCollection.objects.filter(id__in=[rollup_collection.id, raw_collection.id]).values_list(
+            "status", flat=True
+        )
+    ) == {"processed"}

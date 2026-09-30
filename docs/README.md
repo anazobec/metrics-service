@@ -50,6 +50,7 @@ workers must be running for submitted tasks to execute.
 | `tasks` | `apps/tasks/` | Background task system, collectors, scheduling, execution |
 | `dynamic_settings` | `apps/dynamic_settings/` | DB-backed runtime settings (including feature enablement values) |
 | `dashboard_reports` | `apps/dashboard_reports/` | Job data store for automation-reports API |
+| `analytics` | `apps/analytics/` | Raw collector payload storage and read API |
 | `settings` | `apps/settings/` | Dynaconf defaults and mode-specific overrides |
 
 URL loading order (see `metrics_service/urls.py`):
@@ -117,6 +118,8 @@ python manage.py metrics_service init-system-tasks
 | [anonymization-and-transmission.md](anonymization-and-transmission.md) | Anonymization, Segment transmission, opt-out |
 | [dashboard-sync.md](dashboard-sync.md) | Dashboard data collection: backfill and hourly hooks |
 | [dashboard-reports-api.md](dashboard-reports-api.md) | Automation-reports REST API for dashboard UI |
+| [analytics.md](analytics.md) | Raw analytics collectors, task examples, and read API |
+| [ingress.md](ingress.md) | Non-local analytics payload ingress and source semantics |
 | [data-models.md](data-models.md) | Entity relationships across tasks, metrics, and dashboard models |
 
 ## Where to Start
