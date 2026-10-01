@@ -7960,9 +7960,7 @@ components:
         enterprise_streak:
           $ref: '#/components/schemas/AutomationStreak'
         org_streak:
-          allOf:
-          - $ref: '#/components/schemas/OrgStreak'
-          nullable: true
+          $ref: '#/components/schemas/OrgStreak'
         organization_leaderboard:
           $ref: '#/components/schemas/OrganizationLeaderboard'
         org_achievements:
@@ -8301,7 +8299,8 @@ components:
       - status
     OrgStreak:
       type: object
-      description: Automation streak for the busiest organization in the window.
+      description: Automation streak for the current user's busiest organization in
+        the window.
       properties:
         streak:
           type: integer
@@ -8314,7 +8313,9 @@ components:
         organization:
           allOf:
           - $ref: '#/components/schemas/OrgStreakOrganization'
-          description: Organization the streak belongs to
+          nullable: true
+          description: User's busiest organization; null (and every day zero) when
+            the user has no organization runs
       required:
       - daily
       - organization
@@ -8421,10 +8422,14 @@ components:
         runs:
           type: integer
           description: Successful runs in the window
+        user_organization:
+          type: boolean
+          description: True when the current user is a member of this organization
       required:
       - name
       - rank
       - runs
+      - user_organization
     OrganizationMembership:
       type: object
       description: Serializer describing an organization in the current user's membership

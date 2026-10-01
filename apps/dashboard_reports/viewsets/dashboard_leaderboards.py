@@ -16,6 +16,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.viewsets import ReadOnlyModelViewSet
 
+from apps.core.models import User
 from apps.dashboard_reports.models import JobData, JobStatusChoices
 from apps.dashboard_reports.serializers import DashboardLeaderboardsSerializer
 from apps.tasks.task_groups import get_feature_enabled_from_db
@@ -89,13 +90,13 @@ def _user_achievements(
 _ORG_ACHIEVEMENTS: tuple[str, ...] = ("sustained", "rising", "top_tier")
 
 
-def _org_achievements(org_streak: dict[str, Any] | None, org_rank: int | None) -> list[str]:
+def _org_achievements(org_streak: dict[str, Any], org_rank: int | None) -> list[str]:
     """Return the achievement ids the org_streak organization has earned.
 
     Derived from the org's ``daily`` successful-run series (already computed
     for ``org_streak``) plus its current leaderboard rank.
     """
-    if not org_streak:
+    if not org_streak["organization"]:
         return []
 
     daily = org_streak["daily"]
@@ -254,23 +255,47 @@ def _featured_template_stats(successful_runs: models.QuerySet[JobData]) -> dict[
     }
 
 
+def _member_org_names(user: User) -> set[str]:
+    """Return the names of the user's member organizations; empty if they cannot be read."""
+    try:
+        return {org["name"] for org in user.get_member_organizations()}
+    except Exception:
+        logger.exception("Failed to read local organization memberships for user %s", user.username)
+        return set()
+
+
 def _build_organization_stats(
-    day_org_rows: list[dict[str, Any]], window_dates: list[date]
-) -> tuple[dict[str, Any] | None, dict[str, Any], int | None]:
-    """Build the organization streak, leaderboard, and current-organization rank."""
+    day_org_rows: list[dict[str, Any]], window_dates: list[date], member_org_names: set[str]
+) -> tuple[dict[str, Any], dict[str, Any], int | None]:
+    """Build the organization streak, leaderboard, and current-organization rank.
+
+    ``org_streak`` is scoped to the user's busiest organization (most successful
+    runs in the window) among ``member_org_names``. When the user has no
+    organizations — or none of them ran anything in the window — the streak has
+    no organization and every day is zero.
+    """
     # Per-organization successful-run totals for the leaderboard and the
-    # busiest org's streak — an in-memory rollup of day_org_rows by org id.
-    # TODO: derive the user's own organization once membership data is
-    # ingested; for now everything org-scoped uses the busiest org.
+    # user's org streak — an in-memory rollup of day_org_rows by org id.
     org_totals: dict[int, dict[str, Any]] = {}
     for row in day_org_rows:
         org_id = row["organization_id"]
         if org_id is None:
             continue
-        agg = org_totals.setdefault(
-            org_id, {"organization_id": org_id, "organization_name": row["organization_name"], "runs": 0}
-        )
+        agg = org_totals.setdefault(org_id, {"organization_id": org_id, "runs": 0, "names": set(), "latest": None})
         agg["runs"] += row["runs"]
+        agg["names"].add(row["organization_name"])
+        # An org renamed mid-window has a row per name; display the latest one
+        # (non-null and then alphabetical breaks a same-day tie deterministically).
+        name_key = (row["day"], row["organization_name"] is not None, row["organization_name"] or "")
+        if agg["latest"] is None or name_key > agg["latest"]:
+            agg["latest"] = name_key
+            agg["organization_name"] = row["organization_name"]
+
+    # Local Organization pks are not AWX organization ids, so memberships are
+    # matched to JobData by name — any name the org ran under in the window, so
+    # a mid-window rename still matches the (current) local organization name.
+    for agg in org_totals.values():
+        agg["user_organization"] = not agg["names"].isdisjoint(member_org_names)
 
     # -runs, then name (NULL last), then id — a deterministic total order.
     org_rows = sorted(
@@ -282,37 +307,41 @@ def _build_organization_stats(
             row["organization_id"],
         ),
     )
-    top_org = org_rows[0] if org_rows else None
+    # org_rows is already sorted, so the first member org is the user's busiest.
+    user_org = next((row for row in org_rows if row["user_organization"]), None)
 
-    if top_org:
-        top_org_by_day: dict[date, int] = defaultdict(int)
+    user_org_by_day: dict[date, int] = defaultdict(int)
+    if user_org:
         for row in day_org_rows:
-            if row["organization_id"] == top_org["organization_id"]:
-                top_org_by_day[row["day"]] += row["runs"]
-        org_streak: dict[str, Any] | None = {
-            "organization": {
-                "id": top_org["organization_id"],
-                "name": top_org["organization_name"],
-                "run_count": top_org["runs"],
-            },
-            **_streak_series(top_org_by_day, window_dates),
-        }
-    else:
-        org_streak = None
+            if row["organization_id"] == user_org["organization_id"]:
+                user_org_by_day[row["day"]] += row["runs"]
+    org_streak: dict[str, Any] = {
+        "organization": (
+            {
+                "id": user_org["organization_id"],
+                "name": user_org["organization_name"],
+                "run_count": user_org["runs"],
+            }
+            if user_org
+            else None
+        ),
+        **_streak_series(user_org_by_day, window_dates),
+    }
 
-    # Rank of the user's org in the leaderboard. While ``top_org`` is the
-    # busiest org this is always 1; the lookup stays generic so it keeps
-    # working once ``top_org`` becomes the user's actual (owned) org.
+    # Rank of the user's busiest organization; None when none of them ran anything.
     user_organization_rank = (
-        next(rank for rank, row in enumerate(org_rows, start=1) if row["organization_id"] == top_org["organization_id"])
-        if top_org
-        else None
+        next(rank for rank, row in enumerate(org_rows, start=1) if row is user_org) if user_org else None
     )
     organization_leaderboard = {
         "user_organization_rank": user_organization_rank,
         "total_organizations": len(org_rows),
         "leaderboard": [
-            {"rank": rank, "name": row["organization_name"], "runs": row["runs"]}
+            {
+                "rank": rank,
+                "name": row["organization_name"],
+                "runs": row["runs"],
+                "user_organization": row["user_organization"],
+            }
             for rank, row in enumerate(org_rows[:10], start=1)
         ],
     }
@@ -445,7 +474,7 @@ class DashboardLeaderboardsViewSet(ReadOnlyModelViewSet):
         stats["enterprise_streak"] = _streak_series(enterprise_by_day, window_dates)
 
         org_streak, organization_leaderboard, user_organization_rank = _build_organization_stats(
-            day_org_rows, window_dates
+            day_org_rows, window_dates, _member_org_names(request.user)
         )
         stats["org_streak"] = org_streak
         stats["organization_leaderboard"] = organization_leaderboard

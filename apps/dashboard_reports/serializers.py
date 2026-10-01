@@ -416,9 +416,12 @@ class OrgStreakOrganizationSerializer(serializers.Serializer):
 
 
 class OrgStreakSerializer(AutomationStreakSerializer):
-    """Automation streak for the busiest organization in the window."""
+    """Automation streak for the current user's busiest organization in the window."""
 
-    organization = OrgStreakOrganizationSerializer(help_text="Organization the streak belongs to")
+    organization = OrgStreakOrganizationSerializer(
+        allow_null=True,
+        help_text="User's busiest organization; null (and every day zero) when the user has no organization runs",
+    )
 
 
 class OrganizationLeaderboardRowSerializer(serializers.Serializer):
@@ -427,6 +430,9 @@ class OrganizationLeaderboardRowSerializer(serializers.Serializer):
     rank = serializers.IntegerField(help_text="1-based position")
     name = serializers.CharField(allow_null=True, help_text="Organization name")
     runs = serializers.IntegerField(help_text=SUCCESSFUL_RUNS_IN_WINDOW)
+    user_organization = serializers.BooleanField(
+        help_text="True when the current user is a member of this organization"
+    )
 
 
 class OrganizationLeaderboardSerializer(serializers.Serializer):
@@ -470,7 +476,7 @@ class DashboardLeaderboardsSerializer(serializers.Serializer):
     )
     featured_template = FeaturedTemplateSerializer(allow_null=True)
     enterprise_streak = AutomationStreakSerializer()
-    org_streak = OrgStreakSerializer(allow_null=True)
+    org_streak = OrgStreakSerializer()
     organization_leaderboard = OrganizationLeaderboardSerializer()
     org_achievements = serializers.ListField(
         child=serializers.CharField(), help_text="Earned org achievement ids: sustained, rising, top_tier"

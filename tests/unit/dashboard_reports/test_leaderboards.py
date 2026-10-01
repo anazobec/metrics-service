@@ -8,10 +8,12 @@ tests pin "now" so the 30-day window is deterministic.
 import datetime
 import itertools
 import json
+from unittest import mock
 
 import pytest
 from django.urls import reverse
 
+from apps.core.models import User
 from apps.dashboard_reports.models import JobData, JobStatusChoices
 from apps.dynamic_settings.models import Setting
 
@@ -36,6 +38,26 @@ class _FixedDatetime(datetime.datetime):
 @pytest.fixture(autouse=True)
 def _frozen_now(monkeypatch):
     monkeypatch.setattr("apps.dashboard_reports.viewsets.dashboard_leaderboards.datetime", _FixedDatetime)
+
+
+@pytest.fixture
+def member_of(monkeypatch):
+    """Set the authenticated user's organization memberships by name."""
+
+    def _set(*names: str) -> None:
+        """Make ``names`` the user's only member organizations."""
+        orgs = [{"id": pk, "name": name} for pk, name in enumerate(names, start=1)]
+        monkeypatch.setattr(User, "get_member_organizations", lambda self: orgs)
+
+    return _set
+
+
+def assert_empty_org_streak(org_streak):
+    """No organization, zero streak and a zero-filled 30-day series."""
+    assert org_streak["organization"] is None
+    assert org_streak["streak"] == 0
+    assert len(org_streak["daily"]) == 30
+    assert all(d["successful_runs"] == 0 for d in org_streak["daily"])
 
 
 def day(offset: int, hour: int = 12) -> datetime.datetime:
@@ -213,21 +235,84 @@ class TestEnterpriseStreak:
 
 
 class TestOrganizationLeaderboard:
-    def test_org_streak_scoped_to_busiest_org(self, authenticated_client):
+    def test_org_streak_scoped_to_users_busiest_org(self, authenticated_client, member_of):
+        """org_streak follows the user's busiest member org, not the busiest org overall."""
+        member_of("Mid", "Quiet")
         for _ in range(5):
             make_job(day(29), org_id=2, org_name="Busy")
-        make_job(day(29), org_id=3, org_name="Quiet")
+        for _ in range(3):
+            make_job(day(29), org_id=3, org_name="Mid")
+        make_job(day(29), org_id=4, org_name="Quiet")
 
-        org_streak = get(authenticated_client)["org_streak"]
-        assert org_streak["organization"] == {"id": 2, "name": "Busy", "run_count": 5}
+        data = get(authenticated_client)
+        org_streak = data["org_streak"]
+        assert org_streak["organization"] == {"id": 3, "name": "Mid", "run_count": 3}
         assert org_streak["streak"] == 1
-        assert sum(d["successful_runs"] for d in org_streak["daily"]) == 5
+        assert sum(d["successful_runs"] for d in org_streak["daily"]) == 3
+        assert data["organization_leaderboard"]["user_organization_rank"] == 2
 
-    def test_org_streak_null_without_org_data(self, authenticated_client):
+    def test_org_streak_empty_when_user_has_no_organizations(self, authenticated_client, member_of):
+        """A user with no organizations gets an empty org streak, no rank and no org achievements."""
+        member_of()
+        make_job(day(29), org_id=1, org_name="Org One")
+
+        data = get(authenticated_client)
+        assert_empty_org_streak(data["org_streak"])
+        assert data["organization_leaderboard"]["user_organization_rank"] is None
+        assert data["org_achievements"] == []
+
+    def test_org_streak_empty_when_users_orgs_have_no_runs(self, authenticated_client, member_of):
+        """Member orgs without runs in the window leave the org streak empty and the rank None."""
+        member_of("Idle")
+        make_job(day(29), org_id=1, org_name="Org One")
+
+        data = get(authenticated_client)
+        assert_empty_org_streak(data["org_streak"])
+        assert data["organization_leaderboard"]["user_organization_rank"] is None
+
+    def test_org_streak_empty_when_membership_lookup_fails(self, authenticated_client, monkeypatch):
+        """A failing membership lookup is logged and treated as no organizations."""
+
+        def _boom(self):
+            """Simulate the RBAC membership lookup failing."""
+            raise RuntimeError("rbac unavailable")
+
+        monkeypatch.setattr(User, "get_member_organizations", _boom)
+        make_job(day(29), org_id=1, org_name="Org One")
+
+        with mock.patch("apps.dashboard_reports.viewsets.dashboard_leaderboards.logger") as logger:
+            assert_empty_org_streak(get(authenticated_client)["org_streak"])
+        logger.exception.assert_called_once()
+
+    @pytest.mark.parametrize("member_name", ["New Name", "Old Name"])
+    def test_org_renamed_mid_window_matches_any_name(self, authenticated_client, member_of, member_name):
+        """A mid-window rename stays one org, shown under its latest name, matched by either name."""
+        member_of(member_name)
+        for offset in range(10):
+            make_job(day(offset), org_id=1, org_name="Old Name")
+        make_job(day(29), org_id=1, org_name="New Name")
+        make_job(day(29), org_id=2, org_name="Other")
+
+        data = get(authenticated_client)
+        # Latest name is displayed; the whole org (both names) is one streak and one row.
+        assert data["org_streak"]["organization"] == {"id": 1, "name": "New Name", "run_count": 11}
+        assert data["org_streak"]["streak"] == 1
+        board = data["organization_leaderboard"]
+        assert board["user_organization_rank"] == 1
+        assert board["leaderboard"] == [
+            {"rank": 1, "name": "New Name", "runs": 11, "user_organization": True},
+            {"rank": 2, "name": "Other", "runs": 1, "user_organization": False},
+        ]
+
+    def test_org_streak_empty_without_org_data(self, authenticated_client, member_of):
+        """Runs without an organization never produce an org streak."""
+        member_of("Org One")
         make_job(day(1), org_id=None, org_name=None)
-        assert get(authenticated_client)["org_streak"] is None
+        assert_empty_org_streak(get(authenticated_client)["org_streak"])
 
-    def test_leaderboard_ranks_and_totals(self, authenticated_client):
+    def test_leaderboard_ranks_and_totals(self, authenticated_client, member_of):
+        """Orgs are ranked by successful runs and the user's org is flagged."""
+        member_of("Org A")
         make_job(day(1), org_id=1, org_name="Org A")
         make_job(day(1), org_id=1, org_name="Org A")
         make_job(day(1), org_id=2, org_name="Org B")
@@ -236,9 +321,32 @@ class TestOrganizationLeaderboard:
         assert board["total_organizations"] == 2
         assert board["user_organization_rank"] == 1
         assert board["leaderboard"] == [
-            {"rank": 1, "name": "Org A", "runs": 2},
-            {"rank": 2, "name": "Org B", "runs": 1},
+            {"rank": 1, "name": "Org A", "runs": 2, "user_organization": True},
+            {"rank": 2, "name": "Org B", "runs": 1, "user_organization": False},
         ]
+
+    def test_leaderboard_flags_every_user_organization(self, authenticated_client, member_of):
+        """Every member org is flagged; the rank is the busiest member org's."""
+        member_of("Org B", "Org C", "Idle")
+        make_job(day(1), org_id=1, org_name="Org A")
+        make_job(day(1), org_id=1, org_name="Org A")
+        make_job(day(1), org_id=1, org_name="Org A")
+        make_job(day(1), org_id=2, org_name="Org B")
+        make_job(day(1), org_id=2, org_name="Org B")
+        make_job(day(1), org_id=3, org_name="Org C")
+
+        board = get(authenticated_client)["organization_leaderboard"]
+        assert board["user_organization_rank"] == 2
+        assert [row["user_organization"] for row in board["leaderboard"]] == [False, True, True]
+
+    def test_leaderboard_no_user_organization_without_memberships(self, authenticated_client, member_of):
+        """Without memberships no row is flagged and the rank is None."""
+        member_of()
+        make_job(day(1), org_id=1, org_name="Org A")
+
+        board = get(authenticated_client)["organization_leaderboard"]
+        assert board["user_organization_rank"] is None
+        assert [row["user_organization"] for row in board["leaderboard"]] == [False]
 
     def test_leaderboard_ties_broken_alphabetically(self, authenticated_client):
         make_job(day(1), org_id=10, org_name="Zeta")
@@ -452,6 +560,11 @@ class TestUserAchievements:
 
 
 class TestOrgAchievements:
+    @pytest.fixture(autouse=True)
+    def _member_of_org_one(self, member_of):
+        """Make the user a member of the default ``Org One`` for every org achievement test."""
+        member_of("Org One")
+
     def test_empty_without_org_data(self, authenticated_client):
         make_job(day(1), org_id=None, org_name=None)
         assert get(authenticated_client)["org_achievements"] == []
@@ -487,11 +600,12 @@ class TestEdgeCases:
         [JobStatusChoices.ERROR, JobStatusChoices.CANCELED, JobStatusChoices.RUNNING, JobStatusChoices.PENDING],
     )
     def test_non_successful_statuses_are_ignored_everywhere(self, authenticated_client, user, status):
+        """Non-successful runs count towards no metric."""
         make_job(day(5), status=status, **_me(user))
 
         data = get(authenticated_client)
         assert data["job_runs"] == 0
-        assert data["org_streak"] is None
+        assert_empty_org_streak(data["org_streak"])
         assert data["user_achievements"] == []
         assert all(d["total_users"] == 0 for d in data["activity_levels"])
 
@@ -573,7 +687,9 @@ class TestEdgeCases:
         assert volume["total_users"] == 3
         assert {row["username"] for row in volume["leaderboard"]} == {"", "testuser"}
 
-    def test_org_sustained_requires_consecutive_days(self, authenticated_client):
+    def test_org_sustained_requires_consecutive_days(self, authenticated_client, member_of):
+        """14 active days that are not consecutive do not earn ``sustained``."""
+        member_of("Org One")
         for offset in range(0, 28, 2):  # 14 active days, every other day
             make_job(day(offset), org_id=1, org_name="Org One")
 
@@ -598,11 +714,12 @@ class TestResponseShape:
         }
 
     def test_empty_database_is_a_valid_response(self, authenticated_client):
+        """An empty database still returns every key, with empty or zero values."""
         data = get(authenticated_client)
         assert data["job_runs"] == 0
         assert data["active_organizations"] == 0
         assert data["featured_template"] is None
-        assert data["org_streak"] is None
+        assert_empty_org_streak(data["org_streak"])
         assert data["organization_leaderboard"]["leaderboard"] == []
         assert data["user_achievements"] == []
         assert data["org_achievements"] == []
@@ -614,6 +731,7 @@ class TestResponseShape:
     ):
         # Every metric is a rollup of a handful of window-wide GROUP BYs; the
         # query count must not grow with the number of jobs, users or orgs.
+        """The query count does not grow with the number of jobs, users or orgs."""
         for offset in range(0, 30, 2):
             for uid in range(1, 6):
                 for org in range(1, 4):
@@ -628,5 +746,6 @@ class TestResponseShape:
             # One run as the authenticated user so the per-user achievements path
             # (including the "reliable" streak scan) is exercised too.
             make_job(day(offset), org_id=1, org_name="Org 1", template_id=offset % 5 + 1, **_me(user))
-        with django_assert_max_num_queries(13):  # 12 data queries today (incl. SHOW_LEADERBOARD flag), 1 spare
+        # 14 queries today (incl. SHOW_LEADERBOARD flag and 2 for org memberships), 1 spare
+        with django_assert_max_num_queries(15):
             assert authenticated_client.get(URL).status_code == 200
