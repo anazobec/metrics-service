@@ -12,6 +12,7 @@ class CollectorDiscoverySerializer(serializers.Serializer):
     description = serializers.CharField(read_only=True)
     mode = serializers.CharField(read_only=True)
     accepts_since_until = serializers.BooleanField(read_only=True)
+    last_collect = serializers.DateTimeField(read_only=True, allow_null=True)
     rows_url = serializers.HyperlinkedIdentityField(
         view_name="analytics:v1:rows",
         lookup_field="name",

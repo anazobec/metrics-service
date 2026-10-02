@@ -48,6 +48,26 @@ def test_root_lists_enabled_collectors(authenticated_client):
         collector["collect_url"].endswith(f"/api/v1/analytics/{collector['name']}/collect/")
         for collector in response.json()["collectors"]
     )
+    assert all("last_collect" in collector for collector in response.json()["collectors"])
+    assert all(collector["last_collect"] is None for collector in response.json()["collectors"])
+
+
+def test_root_reports_latest_finished_collection_per_collector(authenticated_client):
+    older = _row(CONFIG, None, None)
+    newer = _row(CONFIG, None, None)
+    _row(UNIFIED, datetime(2026, 8, 17, 10, tzinfo=UTC), datetime(2026, 8, 17, 11, tzinfo=UTC))
+
+    older.finished_at = datetime(2026, 8, 17, 10, 1, tzinfo=UTC)
+    older.save(update_fields=["finished_at"])
+    newer.finished_at = datetime(2026, 8, 17, 10, 3, tzinfo=UTC)
+    newer.save(update_fields=["finished_at"])
+
+    response = authenticated_client.get(ROOT)
+
+    assert response.status_code == 200
+    collectors = {collector["name"]: collector for collector in response.json()["collectors"]}
+    assert collectors[CONFIG]["last_collect"] == "2026-08-17T10:03:00Z"
+    assert collectors[UNIFIED]["last_collect"] == "2026-08-17T10:00:01Z"
 
 
 def test_root_browsable_response_links_collector_urls(authenticated_client):

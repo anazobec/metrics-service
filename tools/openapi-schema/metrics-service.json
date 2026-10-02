@@ -190,7 +190,7 @@
         "/api/v1/analytics/": {
             "get": {
                 "operationId": "analytics_retrieve",
-                "description": "List the collectors the analytics API exposes (discovery entry point).\n\nResponse fields:\n\n- `collectors`: list of enabled collector descriptions.\n- `name`: public `group.function` collector name.\n- `description`: summary of the collector's output.\n- `mode`: `hourly`, `daily`, or `snapshot`.\n- `accepts_since_until`: whether collection windows are supported.\n- `rows_url`: URL for stored collection envelopes.\n- `collect_url`: URL for triggering an on-demand collection task.\n",
+                "description": "List the collectors the analytics API exposes (discovery entry point).\n\nResponse fields:\n\n- `collectors`: list of enabled collector descriptions.\n- `name`: public `group.function` collector name.\n- `description`: summary of the collector's output.\n- `mode`: `hourly`, `daily`, or `snapshot`.\n- `accepts_since_until`: whether collection windows are supported.\n- `last_collect`: timestamp when the latest successful collection finished, or null if it has not\n  been collected.\n- `rows_url`: URL for stored collection envelopes.\n- `collect_url`: URL for triggering an on-demand collection task.\n",
                 "summary": "Discover enabled analytics collectors.",
                 "tags": [
                     "analytics"
@@ -219,6 +219,7 @@
                                                     "description": "Job executions, including status and timing, organization, inventory, project, template, execution environment, launcher, labels, and host count.",
                                                     "mode": "hourly",
                                                     "accepts_since_until": true,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.unified_jobs_dashboard/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.unified_jobs_dashboard/collect/"
                                                 },
@@ -227,6 +228,7 @@
                                                     "description": "Per-job host results and counts, with host, job, template, inventory, organization, and project context.",
                                                     "mode": "hourly",
                                                     "accepts_since_until": true,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.job_host_summary_service/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.job_host_summary_service/collect/"
                                                 },
@@ -235,6 +237,7 @@
                                                     "description": "Distinct managed credential types used by jobs completed in the collection window.",
                                                     "mode": "hourly",
                                                     "accepts_since_until": true,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.credentials_service/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.credentials_service/collect/"
                                                 },
@@ -243,6 +246,7 @@
                                                     "description": "Selected job events for jobs completed in the window, including event actions, task/play/role, host, result flags, warnings, and deprecations.",
                                                     "mode": "hourly",
                                                     "accepts_since_until": true,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.main_jobevent_service/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.main_jobevent_service/collect/"
                                                 },
@@ -251,6 +255,7 @@
                                                     "description": "Raw job events modified in the window, including event details, playbook statistics, task/play/role, host, timing, warnings, and deprecations.",
                                                     "mode": "hourly",
                                                     "accepts_since_until": true,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.events_table/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.events_table/collect/"
                                                 },
@@ -259,6 +264,7 @@
                                                     "description": "Workflow job node executions, their job/template/workflow/inventory references, and success, failure, and always edges.",
                                                     "mode": "hourly",
                                                     "accepts_since_until": true,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.workflow_job_node_table/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.workflow_job_node_table/collect/"
                                                 },
@@ -267,6 +273,7 @@
                                                     "description": "Collection metadata: requested bounds and collection type; it does not query the Controller database.",
                                                     "mode": "hourly",
                                                     "accepts_since_until": true,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.query_info/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.query_info/collect/"
                                                 },
@@ -275,6 +282,7 @@
                                                     "description": "Execution environment records, including image, description, ownership, organization, credential, management, and pull settings.",
                                                     "mode": "snapshot",
                                                     "accepts_since_until": false,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.execution_environments/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.execution_environments/collect/"
                                                 },
@@ -283,6 +291,7 @@
                                                     "description": "Selected Controller settings and license details, plus Controller and metrics-utility versions and runtime platform metadata.",
                                                     "mode": "snapshot",
                                                     "accepts_since_until": false,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.config/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.config/collect/"
                                                 },
@@ -291,6 +300,7 @@
                                                     "description": "Distinct versions reported by enabled control and hybrid Controller instances.",
                                                     "mode": "snapshot",
                                                     "accepts_since_until": false,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.controller_version_service/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.controller_version_service/collect/"
                                                 },
@@ -299,6 +309,7 @@
                                                     "description": "Estimated row counts and table, index, and total sizes for the job event, unified job, and job host summary tables.",
                                                     "mode": "snapshot",
                                                     "accepts_since_until": false,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.table_metadata/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.table_metadata/collect/"
                                                 },
@@ -307,6 +318,7 @@
                                                     "description": "Enabled boolean platform feature flags and their descriptions, support levels, toggle types, and visibility.",
                                                     "mode": "snapshot",
                                                     "accepts_since_until": false,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.feature_flags_service/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.feature_flags_service/collect/"
                                                 },
@@ -315,6 +327,7 @@
                                                     "description": "Counts of Controller objects, inventories by kind, non-sync jobs, active hosts and sessions, running and pending jobs, and database connections.",
                                                     "mode": "snapshot",
                                                     "accepts_since_until": false,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.counts/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.counts/collect/"
                                                 },
@@ -323,6 +336,7 @@
                                                     "description": "Credential counts grouped by credential type, including type name and whether the type is managed.",
                                                     "mode": "snapshot",
                                                     "accepts_since_until": false,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.cred_type_counts/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.cred_type_counts/collect/"
                                                 },
@@ -331,6 +345,7 @@
                                                     "description": "Monthly host capacity and usage summaries, including hosts added, deleted, and indirectly managed.",
                                                     "mode": "snapshot",
                                                     "accepts_since_until": false,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.host_metric_summary_monthly_table/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.host_metric_summary_monthly_table/collect/"
                                                 },
@@ -339,6 +354,7 @@
                                                     "description": "Controller instance topology, version, capacity, CPU, memory, node type, enablement, and current and remaining capacity.",
                                                     "mode": "snapshot",
                                                     "accepts_since_until": false,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.instance_info/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.instance_info/collect/"
                                                 },
@@ -347,6 +363,7 @@
                                                     "description": "Inventory names and kinds with host and source counts, source details, and smart inventory entries.",
                                                     "mode": "snapshot",
                                                     "accepts_since_until": false,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.inventory_counts/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.inventory_counts/collect/"
                                                 },
@@ -355,6 +372,7 @@
                                                     "description": "Organization names with distinct user and team counts.",
                                                     "mode": "snapshot",
                                                     "accepts_since_until": false,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.org_counts/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.org_counts/collect/"
                                                 },
@@ -363,6 +381,7 @@
                                                     "description": "Project counts grouped by source-control type, with empty types reported as manual.",
                                                     "mode": "snapshot",
                                                     "accepts_since_until": false,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.projects_by_scm_type/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.projects_by_scm_type/collect/"
                                                 },
@@ -371,6 +390,7 @@
                                                     "description": "Unified job template identity, type, execution environment, ownership, last/current/next job references, scheduling, and status.",
                                                     "mode": "snapshot",
                                                     "accepts_since_until": false,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.unified_job_template_table/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.unified_job_template_table/collect/"
                                                 },
@@ -379,6 +399,7 @@
                                                     "description": "Workflow job template node definitions, inventory and template references, convergence settings, and success, failure, and always edges.",
                                                     "mode": "snapshot",
                                                     "accepts_since_until": false,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.workflow_job_template_node_table/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.workflow_job_template_node_table/collect/"
                                                 },
@@ -387,6 +408,7 @@
                                                     "description": "Enabled inventory hosts with inventory and organization context, last automation time, connection variables, and selected hardware and system facts.",
                                                     "mode": "snapshot",
                                                     "accepts_since_until": false,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.main_host/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.main_host/collect/"
                                                 },
@@ -395,6 +417,7 @@
                                                     "description": "Enabled hosts created or modified in the window, with the same inventory, organization, automation, connection, and selected fact data as main_host.",
                                                     "mode": "daily",
                                                     "accepts_since_until": true,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.main_host_daily/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.main_host_daily/collect/"
                                                 },
@@ -403,6 +426,7 @@
                                                     "description": "Host automation and deletion metrics, counters, inventory usage, and selected host identity and connection facts.",
                                                     "mode": "daily",
                                                     "accepts_since_until": true,
+                                                    "last_collect": null,
                                                     "rows_url": "https://metrics.example.com/api/v1/analytics/controller.main_hostmetric/",
                                                     "collect_url": "https://metrics.example.com/api/v1/analytics/controller.main_hostmetric/collect/"
                                                 }
@@ -12021,6 +12045,12 @@
                     "accepts_since_until": {
                         "type": "boolean",
                         "readOnly": true
+                    },
+                    "last_collect": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
                     },
                     "rows_url": {
                         "type": "string",

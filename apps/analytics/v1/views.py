@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from datetime import UTC, timedelta
+from types import SimpleNamespace
 from uuid import uuid4
 
 from ansible_base.rbac.api.permissions import IsSystemAdminOrAuditor
 from ansible_base.rest_pagination import DefaultPaginator
-from django.db.models import Q
+from django.db.models import Max, Q
 from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schema, inline_serializer
@@ -43,6 +44,8 @@ Response fields:
 - `description`: summary of the collector's output.
 - `mode`: `hourly`, `daily`, or `snapshot`.
 - `accepts_since_until`: whether collection windows are supported.
+- `last_collect`: timestamp when the latest successful collection finished, or null if it has not
+  been collected.
 - `rows_url`: URL for stored collection envelopes.
 - `collect_url`: URL for triggering an on-demand collection task.
 """
@@ -89,6 +92,7 @@ def _collector_discovery_example() -> dict[str, list[dict[str, object]]]:
                 "description": entry.description,
                 "mode": entry.mode,
                 "accepts_since_until": entry.accepts_since_until,
+                "last_collect": None,
                 "rows_url": f"https://metrics.example.com/api/v1/analytics/{entry.name}/",
                 "collect_url": f"https://metrics.example.com/api/v1/analytics/{entry.name}/collect/",
             }
@@ -133,8 +137,25 @@ class AnalyticsRootView(APIView):
     )
     def get(self, request, *args, **kwargs):
         """Return the enabled collectors, descriptions, and their rows URLs."""
+        entries = list(enabled_collectors().values())
+        last_collect_by_collector = dict(
+            AnalyticsPayload.objects.filter(collector__in=[entry.name for entry in entries])
+            .values("collector")
+            .annotate(last_collect=Max("finished_at"))
+            .values_list("collector", "last_collect")
+        )
+        collectors = [
+            SimpleNamespace(
+                name=entry.name,
+                description=entry.description,
+                mode=entry.mode,
+                accepts_since_until=entry.accepts_since_until,
+                last_collect=last_collect_by_collector.get(entry.name),
+            )
+            for entry in entries
+        ]
         serializer = CollectorDiscoverySerializer(
-            enabled_collectors().values(),
+            collectors,
             many=True,
             context={"request": request},
         )

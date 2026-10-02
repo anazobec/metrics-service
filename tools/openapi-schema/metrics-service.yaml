@@ -161,6 +161,8 @@ paths:
         - `description`: summary of the collector's output.
         - `mode`: `hourly`, `daily`, or `snapshot`.
         - `accepts_since_until`: whether collection windows are supported.
+        - `last_collect`: timestamp when the latest successful collection finished, or null if it has not
+          been collected.
         - `rows_url`: URL for stored collection envelopes.
         - `collect_url`: URL for triggering an on-demand collection task.
       summary: Discover enabled analytics collectors.
@@ -185,6 +187,7 @@ paths:
                         labels, and host count.
                       mode: hourly
                       accepts_since_until: true
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.unified_jobs_dashboard/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.unified_jobs_dashboard/collect/
                     - name: controller.job_host_summary_service
@@ -192,6 +195,7 @@ paths:
                         template, inventory, organization, and project context.
                       mode: hourly
                       accepts_since_until: true
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.job_host_summary_service/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.job_host_summary_service/collect/
                     - name: controller.credentials_service
@@ -199,6 +203,7 @@ paths:
                         completed in the collection window.
                       mode: hourly
                       accepts_since_until: true
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.credentials_service/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.credentials_service/collect/
                     - name: controller.main_jobevent_service
@@ -207,6 +212,7 @@ paths:
                         warnings, and deprecations.
                       mode: hourly
                       accepts_since_until: true
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.main_jobevent_service/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.main_jobevent_service/collect/
                     - name: controller.events_table
@@ -215,6 +221,7 @@ paths:
                         timing, warnings, and deprecations.
                       mode: hourly
                       accepts_since_until: true
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.events_table/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.events_table/collect/
                     - name: controller.workflow_job_node_table
@@ -222,6 +229,7 @@ paths:
                         references, and success, failure, and always edges.
                       mode: hourly
                       accepts_since_until: true
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.workflow_job_node_table/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.workflow_job_node_table/collect/
                     - name: controller.query_info
@@ -229,6 +237,7 @@ paths:
                         type; it does not query the Controller database.'
                       mode: hourly
                       accepts_since_until: true
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.query_info/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.query_info/collect/
                     - name: controller.execution_environments
@@ -237,6 +246,7 @@ paths:
                         and pull settings.
                       mode: snapshot
                       accepts_since_until: false
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.execution_environments/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.execution_environments/collect/
                     - name: controller.config
@@ -245,6 +255,7 @@ paths:
                         metadata.
                       mode: snapshot
                       accepts_since_until: false
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.config/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.config/collect/
                     - name: controller.controller_version_service
@@ -252,6 +263,7 @@ paths:
                         hybrid Controller instances.
                       mode: snapshot
                       accepts_since_until: false
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.controller_version_service/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.controller_version_service/collect/
                     - name: controller.table_metadata
@@ -260,6 +272,7 @@ paths:
                         tables.
                       mode: snapshot
                       accepts_since_until: false
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.table_metadata/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.table_metadata/collect/
                     - name: controller.feature_flags_service
@@ -267,6 +280,7 @@ paths:
                         descriptions, support levels, toggle types, and visibility.
                       mode: snapshot
                       accepts_since_until: false
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.feature_flags_service/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.feature_flags_service/collect/
                     - name: controller.counts
@@ -275,6 +289,7 @@ paths:
                         jobs, and database connections.
                       mode: snapshot
                       accepts_since_until: false
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.counts/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.counts/collect/
                     - name: controller.cred_type_counts
@@ -282,6 +297,7 @@ paths:
                         type name and whether the type is managed.
                       mode: snapshot
                       accepts_since_until: false
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.cred_type_counts/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.cred_type_counts/collect/
                     - name: controller.host_metric_summary_monthly_table
@@ -289,6 +305,7 @@ paths:
                         hosts added, deleted, and indirectly managed.
                       mode: snapshot
                       accepts_since_until: false
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.host_metric_summary_monthly_table/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.host_metric_summary_monthly_table/collect/
                     - name: controller.instance_info
@@ -297,6 +314,7 @@ paths:
                         capacity.
                       mode: snapshot
                       accepts_since_until: false
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.instance_info/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.instance_info/collect/
                     - name: controller.inventory_counts
@@ -304,6 +322,7 @@ paths:
                         counts, source details, and smart inventory entries.
                       mode: snapshot
                       accepts_since_until: false
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.inventory_counts/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.inventory_counts/collect/
                     - name: controller.org_counts
@@ -311,6 +330,7 @@ paths:
                         counts.
                       mode: snapshot
                       accepts_since_until: false
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.org_counts/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.org_counts/collect/
                     - name: controller.projects_by_scm_type
@@ -318,6 +338,7 @@ paths:
                         with empty types reported as manual.
                       mode: snapshot
                       accepts_since_until: false
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.projects_by_scm_type/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.projects_by_scm_type/collect/
                     - name: controller.unified_job_template_table
@@ -326,6 +347,7 @@ paths:
                         scheduling, and status.
                       mode: snapshot
                       accepts_since_until: false
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.unified_job_template_table/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.unified_job_template_table/collect/
                     - name: controller.workflow_job_template_node_table
@@ -334,6 +356,7 @@ paths:
                         failure, and always edges.
                       mode: snapshot
                       accepts_since_until: false
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.workflow_job_template_node_table/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.workflow_job_template_node_table/collect/
                     - name: controller.main_host
@@ -342,6 +365,7 @@ paths:
                         hardware and system facts.
                       mode: snapshot
                       accepts_since_until: false
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.main_host/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.main_host/collect/
                     - name: controller.main_host_daily
@@ -350,6 +374,7 @@ paths:
                         and selected fact data as main_host.
                       mode: daily
                       accepts_since_until: true
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.main_host_daily/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.main_host_daily/collect/
                     - name: controller.main_hostmetric
@@ -358,6 +383,7 @@ paths:
                         facts.
                       mode: daily
                       accepts_since_until: true
+                      last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.main_hostmetric/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.main_hostmetric/collect/
                   summary: Enabled analytics collectors
@@ -7820,6 +7846,11 @@ components:
         accepts_since_until:
           type: boolean
           readOnly: true
+        last_collect:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
         rows_url:
           type: string
           format: uri
