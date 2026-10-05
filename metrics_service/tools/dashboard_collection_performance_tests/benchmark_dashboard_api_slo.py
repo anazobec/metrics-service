@@ -2,12 +2,12 @@
 """
 API performance benchmark for the automation dashboard reporting endpoints (SLO check).
 
-Times 11 read-only dashboard_reports endpoints (report, report/details,
+Times 12 read-only dashboard_reports endpoints (report, report/details,
 report/export, templates, filter_sets, subscription_costs, labels,
-organizations, projects, collection_status, collection_telemetry) against
-already-collected data. Triggers no collection task itself — it measures
-read-path latency of endpoints backed by data a prior collection run
-already populated.
+organizations, projects, leaderboard, collection_status, collection_telemetry)
+against already-collected data. Triggers no collection task itself — it
+measures read-path latency of endpoints backed by data a prior collection
+run already populated.
 
 Duration for each endpoint is measured client-side (wall clock around the
 GET), reported alongside an SLO threshold so regressions are easy to spot.
@@ -275,6 +275,16 @@ def time_dashboard_reports_projects_endpoint(page_size: int = 255) -> (float, st
     return (end_time - start_time), base
 
 
+def time_dashboard_reports_leaderboard_endpoint() -> (float, str):
+    endpoint = f"{BASE_URL}/v1/dashboard_reports/leaderboard/"
+    logger.debug(f"Estimating: {endpoint}")
+    start_time = time.perf_counter()
+
+    _get(endpoint)
+    end_time = time.perf_counter()
+    return (end_time - start_time), endpoint
+
+
 def time_dashboard_reports_collection_status_endpoint() -> (float, str):
     endpoint = f"{BASE_URL}/v1/dashboard_reports/collection_status/"
     logger.debug(f"Estimating: {endpoint}")
@@ -308,6 +318,7 @@ def run_phase(label: str, phase_since: datetime, phase_until: datetime) -> float
         time_dashboard_reports_labels_endpoint,
         time_dashboard_reports_organizations_endpoint,
         time_dashboard_reports_projects_endpoint,
+        time_dashboard_reports_leaderboard_endpoint,
         time_dashboard_reports_collection_status_endpoint,
         time_dashboard_reports_collection_telemetry_endpoint,
     ]

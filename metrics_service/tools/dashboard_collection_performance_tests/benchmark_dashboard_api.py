@@ -205,6 +205,41 @@ def _export_csv_http() -> float | None:
         return None
 
 
+def _leaderboard_http() -> float | None:
+    try:
+        start_time = time.perf_counter()
+        resp = requests.get(f"{BASE_URL}/v1/dashboard_reports/leaderboard/", auth=AUTH, timeout=10)
+        resp.raise_for_status()
+        end_time = time.perf_counter()
+
+        return end_time - start_time
+    except Exception as e:
+        print(f"Failed to fetch leaderboard: {e}")
+        return None
+
+
+def _leaderboard_direct_db() -> float | None:
+    """Hit the leaderboard view in-process via the DRF test client, bypassing HTTP auth entirely."""
+    from django.contrib.auth import get_user_model
+    from rest_framework.test import APIClient
+
+    try:
+        user = get_user_model().objects.get(username=USERNAME)
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        start_time = time.perf_counter()
+        resp = client.get("/api/v1/dashboard_reports/leaderboard/")
+        if resp.status_code != 200:
+            raise RuntimeError(f"leaderboard failed: {resp.status_code} {resp.content[:300]}")
+        end_time = time.perf_counter()
+
+        return end_time - start_time
+    except Exception as e:
+        print(f"Failed to fetch leaderboard: {e}")
+        return None
+
+
 def _export_csv_direct_db() -> float | None:
     """Hit the export view in-process via the DRF test client, bypassing HTTP auth entirely."""
     from django.contrib.auth import get_user_model
@@ -230,9 +265,10 @@ def _export_csv_direct_db() -> float | None:
 trigger_task = _trigger_task_direct_db if DIRECT_DB else _trigger_task_http
 wait_for_task = _wait_for_task_direct_db if DIRECT_DB else _wait_for_task_http
 export_csv = _export_csv_direct_db if DIRECT_DB else _export_csv_http
+fetch_leaderboard = _leaderboard_direct_db if DIRECT_DB else _leaderboard_http
 
 
-def run_phase(label: str, phase_since: datetime, phase_until: datetime) -> float:
+def run_phase(label: str, phase_since: datetime, phase_until: datetime) -> tuple[float, float | None, float | None]:
     """Clear JobData, trigger a collection for the given window, return task duration."""
     print(f"\n{label}")
     print(f"  Range: {phase_since.date()} → {phase_until.date()}")
@@ -252,14 +288,17 @@ def run_phase(label: str, phase_since: datetime, phase_until: datetime) -> float
     task_elapsed = wait_for_task(task_id)
     wall_elapsed = time.perf_counter() - wall_start
     csv_export_elapsed = export_csv()
+    leaderboard_elapsed = fetch_leaderboard()
 
     job_data_count = JobData.objects.count()
     csv_export_str = f"{csv_export_elapsed * 1000:.2f}ms" if csv_export_elapsed is not None else "FAILED"
+    leaderboard_str = f"{leaderboard_elapsed * 1000:.2f}ms" if leaderboard_elapsed is not None else "FAILED"
     print(f"  Duration (task):                      {task_elapsed:.2f}s")
     print(f"  Duration (wall):                      {wall_elapsed:.2f}s  (includes queue wait)")
     print(f"  Duration (csv export - last 90 days): {csv_export_str}")
+    print(f"  Duration (leaderboard - last 30 days): {leaderboard_str}")
     print(f"  JobData rows in DB:                   {job_data_count:,}")
-    return task_elapsed, csv_export_elapsed
+    return task_elapsed, csv_export_elapsed, leaderboard_elapsed
 
 
 # ---------------------------------------------------------------------------
@@ -303,9 +342,15 @@ def main() -> None:
     metrics_before = read_prometheus_metrics(METRICS_URL)
     overall_start = time.perf_counter()
 
-    month_elapsed, month_csv_export_elapsed = run_phase("Phase 1: One month collection", MONTH_SINCE, MONTH_UNTIL)
-    week_elapsed, week_csv_export_elapsed = run_phase("Phase 2: One week collection", WEEK_SINCE, WEEK_UNTIL)
-    day_elapsed, day_csv_export_elapsed = run_phase("Phase 3: One day collection", DAY_SINCE, DAY_UNTIL)
+    month_elapsed, month_csv_export_elapsed, month_leaderboard_elapsed = run_phase(
+        "Phase 1: One month collection", MONTH_SINCE, MONTH_UNTIL
+    )
+    week_elapsed, week_csv_export_elapsed, week_leaderboard_elapsed = run_phase(
+        "Phase 2: One week collection", WEEK_SINCE, WEEK_UNTIL
+    )
+    day_elapsed, day_csv_export_elapsed, day_leaderboard_elapsed = run_phase(
+        "Phase 3: One day collection", DAY_SINCE, DAY_UNTIL
+    )
 
     total_wall = time.perf_counter() - overall_start
     metrics_after = read_prometheus_metrics(METRICS_URL)
