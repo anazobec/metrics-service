@@ -1,7 +1,9 @@
 # test_tasks.py - Unit tests for dashboard_reports tasks
 
 import contextlib
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -18,6 +20,7 @@ from apps.dashboard_reports.tasks import (
     _process_batches,
     _resolve_collection_params,
     _sync_jobs_atomically,
+    backfill_dashboard_organization_names,
     cleanup_dashboard_reports_old_data,
     collect_dashboard_reports_data,
     collect_dashboard_reports_initial_data,
@@ -1330,3 +1333,147 @@ class TestParseDtNaT:
         """Non-NaT ISO strings are unaffected by the NaT guard."""
         result = _parse_dt("2024-06-01T12:00:00+00:00")
         assert result == datetime(2024, 6, 1, 12, 0, tzinfo=UTC)
+
+
+@pytest.mark.unit
+@pytest.mark.django_db
+class TestBackfillDashboardOrganizationNames:
+    """Tests for backfill_dashboard_organization_names / fill_missing_organization_names."""
+
+    @pytest.fixture
+    def mock_fetch_orgs(self) -> Iterator[MagicMock]:
+        """Patch the AWX DB connection and organization lookup (org 99 does not exist in AWX)."""
+        with (
+            patch("apps.dashboard_reports.tasks.get_db_connection"),
+            patch(
+                "apps.dashboard_reports.tasks.fetch_organizations",
+                return_value=([{"id": 1, "name": "Org A"}, {"id": 2, "name": "Org B"}], 2),
+            ) as mock_fetch,
+        ):
+            yield mock_fetch
+
+    @staticmethod
+    def _job(job_id: int, organization_id: int | None, organization_name: str | None = None) -> JobData:
+        return JobData.objects.create(
+            job_id=job_id,
+            template_name="T",
+            organization_id=organization_id,
+            organization_name=organization_name,
+            started=datetime(2025, 3, 1, tzinfo=UTC),
+            finished=datetime(2025, 3, 1, 0, 5, tzinfo=UTC),
+            elapsed=300,
+        )
+
+    @staticmethod
+    def _names() -> dict[int, str | None]:
+        return dict(JobData.objects.values_list("job_id", "organization_name"))
+
+    def test_runs_without_waiting_for_initial_collection(self, mock_fetch_orgs: MagicMock) -> None:
+        """The backfill does not depend on the initial-collection task (it may have run long ago, or not yet)."""
+        self._job(1, organization_id=1)
+
+        result = backfill_dashboard_organization_names()
+
+        assert result["status"] == "success"
+        assert result["updated_records"] == 1
+
+    def test_nothing_to_fix_skips_awx_query(self, mock_fetch_orgs: MagicMock) -> None:
+        """When no row is missing a name the AWX DB is not queried."""
+        self._job(1, organization_id=1, organization_name="Org A")
+
+        result = backfill_dashboard_organization_names()
+
+        assert result["status"] == "success"
+        assert result["updated_records"] == 0
+        mock_fetch_orgs.assert_not_called()
+
+    def test_updates_only_rows_with_existing_organization(self, mock_fetch_orgs: MagicMock) -> None:
+        """Only unnamed rows of existing orgs are filled; other rows are unchanged and counted as unresolved."""
+        self._job(1, organization_id=1)
+        self._job(2, organization_id=2)
+        self._job(3, organization_id=1, organization_name="Synced After Fix")
+        self._job(4, organization_id=None)
+        self._job(5, organization_id=99)  # not found / deleted in AWX
+        self._job(6, organization_id=99)
+
+        result = backfill_dashboard_organization_names()
+
+        assert result["status"] == "success"
+        assert result["updated_records"] == 2
+        assert result["unresolved_records"] == 2
+        assert result["unresolved_ids"] == [99]
+        assert self._names() == {1: "Org A", 2: "Org B", 3: "Synced After Fix", 4: None, 5: None, 6: None}
+
+    def test_second_run_changes_nothing(self, mock_fetch_orgs: MagicMock) -> None:
+        """Re-running only touches rows that still have no name, so a second run updates nothing."""
+        self._job(1, organization_id=1)
+        self._job(2, organization_id=99)
+        backfill_dashboard_organization_names()
+        names_after_first = self._names()
+
+        result = backfill_dashboard_organization_names()
+
+        assert result["status"] == "success"
+        assert result["updated_records"] == 0
+        assert result["unresolved_records"] == 1
+        assert self._names() == names_after_first
+
+    def test_processes_rows_in_batches(self, mock_fetch_orgs: MagicMock) -> None:
+        """All rows are updated when they span several batches, including unresolved rows in between."""
+        for job_id in range(1, 8):
+            self._job(job_id, organization_id=99 if job_id == 4 else (1 if job_id % 2 else 2))
+
+        with patch("apps.dashboard_reports.tasks.log_task_execution") as mock_log:
+            result = backfill_dashboard_organization_names(batch_size=2)
+
+        assert result["updated_records"] == 6
+        assert result["unresolved_records"] == 1
+        batch_logs = [c for c in mock_log.call_args_list if c.kwargs["operation"] == "processing"]
+        assert len(batch_logs) == 3
+        names = self._names()
+        assert names[4] is None
+        assert {names[i] for i in (1, 3, 5, 7)} == {"Org A"}
+        assert {names[i] for i in (2, 6)} == {"Org B"}
+
+    def test_numeric_string_batch_size_is_accepted(self, mock_fetch_orgs: MagicMock) -> None:
+        """A numeric string batch_size (e.g. from API task_data) is accepted."""
+        self._job(1, organization_id=1)
+
+        result = backfill_dashboard_organization_names(batch_size="2")
+
+        assert result["status"] == "success"
+        assert result["updated_records"] == 1
+
+    def test_uses_awx_database_kwarg(self, mock_fetch_orgs: MagicMock) -> None:
+        """The AWX database name can be overridden via the awx_database kwarg."""
+        self._job(1, organization_id=1)
+        with patch("apps.dashboard_reports.tasks.get_db_connection") as mock_conn:
+            backfill_dashboard_organization_names(awx_database="awx_other")
+
+        mock_conn.assert_called_once_with("awx_other")
+
+    @pytest.mark.parametrize("batch_size", [0, -1, "abc", True, 2.9, None])
+    def test_invalid_batch_size_returns_error(self, mock_fetch_orgs: MagicMock, batch_size: Any) -> None:
+        """An invalid batch_size is rejected before any rows are touched."""
+        self._job(1, organization_id=1)
+
+        result = backfill_dashboard_organization_names(batch_size=batch_size)
+
+        assert result["status"] == "error"
+        assert "batch_size" in result["error"]
+        assert JobData.objects.get(job_id=1).organization_name is None
+
+    def test_awx_error_returns_error(self) -> None:
+        """A failing AWX query returns an error result, is logged, and leaves rows unchanged."""
+        self._job(1, organization_id=1)
+        with (
+            patch("apps.dashboard_reports.tasks.get_db_connection"),
+            patch("apps.dashboard_reports.tasks.fetch_organizations", side_effect=RuntimeError("boom")),
+            patch("apps.dashboard_reports.tasks.log_task_execution") as mock_log,
+        ):
+            result = backfill_dashboard_organization_names()
+
+        assert result["status"] == "error"
+        assert "boom" in result["error"]
+        assert mock_log.call_args.kwargs["operation"] == "failed"
+        assert JobData.objects.get(job_id=1).organization_name is None

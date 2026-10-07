@@ -1,8 +1,9 @@
 """
 Background tasks for dashboard reports data collection and cleanup.
 
-Provides five dispatcherd tasks:
+Provides dispatcherd tasks:
 - collect_dashboard_reports_initial_data: full historical backfill (window from the Controller's retention schedule, default 90 days)
+- backfill_dashboard_organization_names: one-time fix of JobData rows missing organization_name
 - collect_dashboard_reports_data: incremental sync from last known timestamp (deprecated)
 - sync_dashboard_job_records: writes unified_jobs data from the hourly hook to JobData
 - sync_dashboard_host_summaries: writes host summary data from the hourly hook to JobHostSummary
@@ -17,16 +18,18 @@ from typing import Any
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Case, CharField, QuerySet, Value, When
 from metrics_utility.library.collectors.dashboard import (
     DashboardJobsResultType,
     dashboard_jobs,
 )
 
-from apps.dashboard_reports.awx_queries import fetch_retention_settings
+from apps.dashboard_reports.awx_queries import fetch_organizations, fetch_retention_settings
 from apps.dashboard_reports.models import DashboardTelemetry, JobData, JobHostSummary
 from apps.tasks.utils import create_task_result, get_db_connection, log_task_execution
 
 DEFAULT_AWX_DB_NAME = "awx"
+ORG_NAME_BACKFILL_BATCH_SIZE = 5_000
 DEFAULT_RETENTION_DAYS = 90
 
 logger = logging.getLogger(__name__)
@@ -409,6 +412,117 @@ def collect_dashboard_reports_initial_data(**kwargs) -> dict[str, Any]:
         )
 
     return create_task_result("success", data=result.get("data", {}))
+
+
+def _org_name_backfill_batch_size(kwargs: dict[str, Any]) -> int:
+    """Return a validated ``batch_size`` kwarg for the organization-name backfill."""
+    raw = kwargs.get("batch_size", ORG_NAME_BACKFILL_BATCH_SIZE)
+    # bool is an int subclass and int() would truncate floats, so require a real integer
+    # (numeric strings are accepted, as task_data may come from the API as text).
+    if isinstance(raw, bool) or not isinstance(raw, int | str):
+        raise ValueError(f"batch_size must be a positive integer, got {raw!r}")
+    try:
+        batch_size = int(raw)
+    except ValueError as e:
+        raise ValueError(f"batch_size must be a positive integer, got {raw!r}") from e
+    if batch_size <= 0:
+        raise ValueError(f"batch_size must be > 0, got {batch_size!r}")
+    return batch_size
+
+
+def _update_organization_names(
+    missing_qs: QuerySet[JobData], names_by_id: dict[int, str], batch_size: int, task_name: str
+) -> int:
+    """Set organization_name on rows of ``missing_qs`` whose organization is in ``names_by_id``.
+
+    Walks the rows by primary key in batches of ``batch_size``; each batch is a single UPDATE,
+    committed on its own, so the task never holds locks on the whole table. The UPDATE re-checks
+    ``organization_name IS NULL`` so rows named concurrently (e.g. by the hourly sync) are left alone.
+    Returns the number of updated rows.
+    """
+    resolved_qs = missing_qs.filter(organization_id__in=names_by_id.keys()).order_by("pk")
+    updated = 0
+    last_pk = 0
+    while True:
+        batch = list(resolved_qs.filter(pk__gt=last_pk).values_list("pk", "organization_id")[:batch_size])
+        if not batch:
+            break
+        last_pk = batch[-1][0]
+        batch_org_ids = {org_id for _, org_id in batch}
+        updated += JobData.objects.filter(pk__in=[pk for pk, _ in batch], organization_name__isnull=True).update(
+            organization_name=Case(
+                *[When(organization_id=org_id, then=Value(names_by_id[org_id])) for org_id in batch_org_ids],
+                output_field=CharField(),
+            )
+        )
+        log_task_execution(
+            task_name=task_name,
+            operation="processing",
+            details=f"Updated batch of {len(batch)} rows (total so far: {updated}, cursor pk: {last_pk})",
+        )
+    return updated
+
+
+def fill_missing_organization_names(
+    task_name: str, db_name: str = DEFAULT_AWX_DB_NAME, batch_size: int = ORG_NAME_BACKFILL_BATCH_SIZE
+) -> dict[str, Any]:
+    """
+    Set organization_name on JobData rows that have ``organization_id`` set but no name.
+
+    Names are resolved from the AWX ``main_organization`` table and written in batches. Rows whose
+    organization no longer exists in AWX are left NULL and counted in ``unresolved_records``. Only
+    rows still missing a name are touched, so repeated calls are safe. Raises if AWX cannot be queried.
+
+    Returns ``{"updated_records", "unresolved_records", "unresolved_ids"}``.
+    """
+    missing_qs = JobData.objects.filter(organization_id__isnull=False, organization_name__isnull=True)
+    # order_by() drops JobData's default -started ordering, which would otherwise be added to SELECT DISTINCT.
+    org_ids = set(missing_qs.order_by().values_list("organization_id", flat=True).distinct())
+    if not org_ids:
+        log_task_execution(
+            task_name=task_name, operation="completed", details="No JobData rows missing organization_name"
+        )
+        return {"updated_records": 0, "unresolved_records": 0, "unresolved_ids": []}
+
+    organizations, _ = fetch_organizations(db_connection=get_db_connection(db_name))
+    names_by_id = {org["id"]: org["name"] for org in organizations if org["id"] in org_ids}
+    updated = _update_organization_names(missing_qs, names_by_id, batch_size, task_name)
+
+    unresolved_ids = sorted(org_ids - names_by_id.keys())
+    unresolved_records = missing_qs.filter(organization_id__in=unresolved_ids).count() if unresolved_ids else 0
+    log_task_execution(
+        task_name=task_name,
+        operation="completed",
+        details=(
+            f"Set organization_name on {updated} JobData records; {unresolved_records} records left unchanged "
+            f"(organization not found in AWX, ids: {unresolved_ids})"
+        ),
+    )
+    return {"updated_records": updated, "unresolved_records": unresolved_records, "unresolved_ids": unresolved_ids}
+
+
+def backfill_dashboard_organization_names(**kwargs: Any) -> dict[str, Any]:
+    """
+    One-time fix of JobData rows stored without organization_name by earlier collector versions.
+
+    Runs once as a system task (``cron=None``) after install/upgrade. Only needed where
+    ``collect_dashboard_reports_initial_data`` already ran with the old collector (it is a one-shot
+    task and will not run again); on fresh installs the fixed collector stores names itself, so
+    this finds no rows and completes immediately. See ``fill_missing_organization_names`` for the
+    update rules.
+    """
+    task_name = "backfill_dashboard_organization_names"
+    try:
+        batch_size = _org_name_backfill_batch_size(kwargs)
+        stats = fill_missing_organization_names(
+            task_name, db_name=kwargs.get("awx_database", DEFAULT_AWX_DB_NAME), batch_size=batch_size
+        )
+    except Exception as e:
+        logger.exception(f"{task_name}: failed")
+        msg = f"Filling organization names failed: {str(e)}"
+        log_task_execution(task_name=task_name, operation="failed", details=msg)
+        return create_task_result("error", error=msg)
+    return create_task_result("success", data={"task_type": task_name, **stats})
 
 
 def collect_dashboard_reports_data(**kwargs) -> dict[str, Any]:

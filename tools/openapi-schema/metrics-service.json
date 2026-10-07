@@ -12216,7 +12216,7 @@
                     },
                     "active_organizations": {
                         "type": "integer",
-                        "description": "Organizations with at least one successful job run in the window"
+                        "description": "Organizations with at least one successful job run in the window; organizations without a known name (e.g. deleted in AWX) are not counted, matching the organization leaderboard"
                     },
                     "featured_template": {
                         "allOf": [

@@ -337,6 +337,14 @@ DASHBOARD_COLLECTION_GROUP = TaskGroup(
             "description": "Initial dashboard report collection (backfill; window controlled by the Controller's cleanup_jobs retention schedule, default 90 days)",
         },
         {
+            "task_id": "backfill_dashboard_organization_names",
+            "function": "backfill_dashboard_organization_names",
+            "cron": None,  # No schedule, run once after install/upgrade
+            "args": {},
+            "enabled": True,
+            "description": "One-time fix of JobData organization_name left NULL by earlier initial collections",
+        },
+        {
             "task_id": "cleanup_dashboard_reports_old_data",
             "function": "cleanup_dashboard_reports_old_data",
             "cron": "30 5 * * *",  # Daily at 5:30 AM

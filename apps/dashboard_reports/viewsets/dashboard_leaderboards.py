@@ -281,12 +281,16 @@ def _build_organization_stats(
         org_id = row["organization_id"]
         if org_id is None:
             continue
-        agg = org_totals.setdefault(org_id, {"organization_id": org_id, "runs": 0, "names": set(), "latest": None})
+        agg = org_totals.setdefault(
+            org_id, {"organization_id": org_id, "runs": 0, "names": set(), "latest": None, "organization_name": None}
+        )
         agg["runs"] += row["runs"]
+        if row["organization_name"] is None:
+            continue  # name not synced (e.g. org deleted in AWX); runs still count toward the org's total
         agg["names"].add(row["organization_name"])
         # An org renamed mid-window has a row per name; display the latest one
-        # (non-null and then alphabetical breaks a same-day tie deterministically).
-        name_key = (row["day"], row["organization_name"] is not None, row["organization_name"] or "")
+        # (alphabetical breaks a same-day tie deterministically).
+        name_key = (row["day"], row["organization_name"])
         if agg["latest"] is None or name_key > agg["latest"]:
             agg["latest"] = name_key
             agg["organization_name"] = row["organization_name"]
@@ -297,15 +301,12 @@ def _build_organization_stats(
     for agg in org_totals.values():
         agg["user_organization"] = not agg["names"].isdisjoint(member_org_names)
 
-    # -runs, then name (NULL last), then id — a deterministic total order.
+    # Organizations without any known name are left off the leaderboard: the UI
+    # cannot display a row without a name. -runs, then name, then id — a
+    # deterministic total order.
     org_rows = sorted(
-        org_totals.values(),
-        key=lambda row: (
-            -row["runs"],
-            row["organization_name"] is None,
-            row["organization_name"] or "",
-            row["organization_id"],
-        ),
+        (row for row in org_totals.values() if row["organization_name"] is not None),
+        key=lambda row: (-row["runs"], row["organization_name"], row["organization_id"]),
     )
     # org_rows is already sorted, so the first member org is the user's busiest.
     user_org = next((row for row in org_rows if row["user_organization"]), None)
@@ -458,9 +459,14 @@ class DashboardLeaderboardsViewSet(ReadOnlyModelViewSet):
 
         stats: dict[str, Any] = {
             "job_runs": sum(row["runs"] for row in day_org_rows),
-            # Organizations with at least one successful job run in the window.
+            # Organizations with at least one successful job run in the window. Like the
+            # leaderboard, organizations without any known name are not counted.
             "active_organizations": len(
-                {row["organization_id"] for row in day_org_rows if row["organization_id"] is not None}
+                {
+                    row["organization_id"]
+                    for row in day_org_rows
+                    if row["organization_id"] is not None and row["organization_name"] is not None
+                }
             ),
         }
 

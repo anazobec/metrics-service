@@ -472,7 +472,10 @@ class DashboardLeaderboardsSerializer(serializers.Serializer):
 
     job_runs = serializers.IntegerField(help_text="Total successful job runs in the window")
     active_organizations = serializers.IntegerField(
-        help_text="Organizations with at least one successful job run in the window"
+        help_text=(
+            "Organizations with at least one successful job run in the window; organizations without a known name "
+            "(e.g. deleted in AWX) are not counted, matching the organization leaderboard"
+        )
     )
     featured_template = FeaturedTemplateSerializer(allow_null=True)
     enterprise_streak = AutomationStreakSerializer()

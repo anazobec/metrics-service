@@ -355,12 +355,27 @@ class TestOrganizationLeaderboard:
         names = [row["name"] for row in get(authenticated_client)["organization_leaderboard"]["leaderboard"]]
         assert names == ["Alpha", "Zeta"]
 
-    def test_leaderboard_places_unnamed_organizations_after_named_ones(self, authenticated_client):
+    def test_leaderboard_excludes_organizations_without_name(self, authenticated_client):
+        """An organization with no known name never appears as a null-named leaderboard row."""
         make_job(day(1), org_id=10, org_name=None)
         make_job(day(1), org_id=11, org_name="Alpha")
 
-        names = [row["name"] for row in get(authenticated_client)["organization_leaderboard"]["leaderboard"]]
-        assert names == ["Alpha", None]
+        data = get(authenticated_client)
+        board = data["organization_leaderboard"]
+        assert [row["name"] for row in board["leaderboard"]] == ["Alpha"]
+        assert board["total_organizations"] == 1
+        assert data["active_organizations"] == 1
+        # Unnamed runs still count toward platform-wide totals.
+        assert data["job_runs"] == 2
+
+    def test_leaderboard_uses_known_name_when_some_rows_lack_it(self, authenticated_client):
+        """Rows with a null name still add runs to the org, displayed under its known name."""
+        make_job(day(1), org_id=10, org_name="Alpha")
+        make_job(day(2), org_id=10, org_name=None)
+        make_job(day(1), org_id=11, org_name="Beta")
+
+        board = get(authenticated_client)["organization_leaderboard"]["leaderboard"]
+        assert [(row["name"], row["runs"]) for row in board] == [("Alpha", 2), ("Beta", 1)]
 
     def test_leaderboard_capped_at_10(self, authenticated_client):
         for org_id in range(1, 16):

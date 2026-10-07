@@ -19,6 +19,8 @@ from ..analytics.tasks import collect_analytics_on_demand
 
 # Dashboard reports tasks
 from ..dashboard_reports.tasks import (
+    ORG_NAME_BACKFILL_BATCH_SIZE,
+    backfill_dashboard_organization_names,
     cleanup_dashboard_reports_old_data,
     cleanup_dashboard_telemetry,
     collect_dashboard_reports_data,
@@ -67,6 +69,7 @@ TASK_FUNCTIONS = {
     # Dashboard reports
     "collect_dashboard_reports_data": collect_dashboard_reports_data,
     "collect_dashboard_reports_initial_data": collect_dashboard_reports_initial_data,
+    "backfill_dashboard_organization_names": backfill_dashboard_organization_names,
     "cleanup_dashboard_reports_old_data": cleanup_dashboard_reports_old_data,
     "cleanup_dashboard_telemetry": cleanup_dashboard_telemetry,
     "sync_dashboard_job_records": sync_dashboard_job_records,
@@ -84,6 +87,7 @@ TASK_LOCKS = {
     "daily_anonymize_and_prepare",
     "send_anonymized_to_segment",
     "collect_dashboard_reports_initial_data",
+    "backfill_dashboard_organization_names",
     "cleanup_dashboard_reports_old_data",
     "cleanup_dashboard_telemetry",
     "sync_dashboard_job_records",
@@ -471,6 +475,20 @@ TASK_METADATA = {
             },
         ],
     },
+    "backfill_dashboard_organization_names": {
+        "queue": "dashboard",
+        "category": _DASHBOARD_REPORTS_CATEGORY,
+        "description": "One-time fix: set organization_name on JobData rows where it is NULL but organization_id is set (organizations no longer in AWX are left unchanged)",
+        "parameters": {
+            "batch_size": {
+                "type": "integer",
+                "default": ORG_NAME_BACKFILL_BATCH_SIZE,
+                "description": "Number of JobData rows updated per batch (each batch is a separate UPDATE)",
+                "min": 1,
+            },
+        },
+        "examples": [{"name": "Default", "data": {}}, {"name": "Smaller batches", "data": {"batch_size": 1000}}],
+    },
     "sync_dashboard_job_records": {
         "queue": "dashboard",
         "category": _DASHBOARD_REPORTS_CATEGORY,
@@ -610,6 +628,7 @@ __all__ = [
     # Dashboard reports
     "collect_dashboard_reports_data",
     "collect_dashboard_reports_initial_data",
+    "backfill_dashboard_organization_names",
     "cleanup_dashboard_reports_old_data",
     "cleanup_dashboard_telemetry",
     "sync_dashboard_job_records",
