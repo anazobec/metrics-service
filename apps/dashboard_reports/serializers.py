@@ -8,6 +8,7 @@ template metadata used by the dashboard reporting API endpoints.
 import decimal
 from typing import TYPE_CHECKING, Any
 
+from drf_spectacular.extensions import OpenApiSerializerFieldExtension
 from rest_framework import serializers
 
 from apps.dashboard_reports.models import DashboardTelemetry, FilterSet, JobData, SubscriptionCost, TemplateMetadata
@@ -422,6 +423,15 @@ class OrgStreakSerializer(AutomationStreakSerializer):
         allow_null=True,
         help_text="User's busiest organization; null (and every day zero) when the user has no organization runs",
     )
+
+
+class OrgStreakOrganizationSchema(OpenApiSerializerFieldExtension):
+    target_class = OrgStreakOrganizationSerializer
+
+    def map_serializer_field(self, auto_schema, direction):
+        # Inline the object so allow_null applies to its type, rather than an
+        # allOf reference whose component still rejects null in OpenAPI 3.0.
+        return auto_schema._map_serializer(self.target, direction)
 
 
 class OrganizationLeaderboardRowSerializer(serializers.Serializer):

@@ -12720,43 +12720,35 @@
                         "description": "One entry per day in the 30-day window"
                     },
                     "organization": {
-                        "allOf": [
-                            {
-                                "$ref": "#/components/schemas/OrgStreakOrganization"
+                        "type": "object",
+                        "description": "User's busiest organization; null (and every day zero) when the user has no organization runs",
+                        "properties": {
+                            "id": {
+                                "type": "integer",
+                                "description": "AWX organization ID"
+                            },
+                            "name": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "Organization name"
+                            },
+                            "run_count": {
+                                "type": "integer",
+                                "description": "Successful runs in the window"
                             }
+                        },
+                        "required": [
+                            "id",
+                            "name",
+                            "run_count"
                         ],
-                        "nullable": true,
-                        "description": "User's busiest organization; null (and every day zero) when the user has no organization runs"
+                        "nullable": true
                     }
                 },
                 "required": [
                     "daily",
                     "organization",
                     "streak"
-                ]
-            },
-            "OrgStreakOrganization": {
-                "type": "object",
-                "description": "The organization the org streak is scoped to.",
-                "properties": {
-                    "id": {
-                        "type": "integer",
-                        "description": "AWX organization ID"
-                    },
-                    "name": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Organization name"
-                    },
-                    "run_count": {
-                        "type": "integer",
-                        "description": "Successful runs in the window"
-                    }
-                },
-                "required": [
-                    "id",
-                    "name",
-                    "run_count"
                 ]
             },
             "Organization": {
