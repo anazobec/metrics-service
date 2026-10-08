@@ -29,6 +29,10 @@ def cleanup_old_tasks(**kwargs) -> dict[str, Any]:
     IMPORTANT: Recurring tasks are automatically preserved and will NOT be deleted,
     regardless of their age, to ensure scheduled tasks continue to function.
 
+    One-shot system tasks from the task groups (e.g. initial_dashboard_collection) are never deleted:
+    init-system-tasks relies on a completed one still being present (with its completed_at) to keep it
+    from running again. Per-run rows of recurring system tasks are cleaned up as usual.
+
     Args:
         **kwargs: Task data containing cleanup parameters:
             - days_old (int): Number of days old tasks should be to qualify for cleanup (default: 5)
@@ -40,6 +44,7 @@ def cleanup_old_tasks(**kwargs) -> dict[str, Any]:
         dict: Task result dictionary with cleanup statistics
     """
     from ..models import Task, TaskExecution
+    from ..task_groups import get_oneshot_task_ids
 
     days_old = kwargs.get("days_old", 5)
     dry_run = kwargs.get("dry_run", False)
@@ -79,7 +84,7 @@ def cleanup_old_tasks(**kwargs) -> dict[str, Any]:
     old_tasks_fallback = Task.objects.filter(old_tasks_fallback_filter)
 
     # Combine querysets
-    old_tasks = old_tasks | old_tasks_fallback
+    old_tasks = (old_tasks | old_tasks_fallback).exclude(is_system_task=True, name__in=get_oneshot_task_ids())
 
     task_count = old_tasks.count()
     execution_count = 0

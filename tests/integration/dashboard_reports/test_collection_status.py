@@ -2,16 +2,21 @@
 GET/POST /api/v1/dashboard_reports/collection_status/."""
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import resolve
+from django.utils import timezone
 from rest_framework.test import APIClient
 
+from apps.dashboard_reports.models import JobData
 from apps.dynamic_settings.models import Setting
+from apps.tasks.cleanup.cleanup_old_tasks import cleanup_old_tasks
 from apps.tasks.models import Task, TaskExecution
+from apps.tasks.tasks_system import create_system_tasks, execute_db_task
 from tests.test_utils import get_test_password
 
 User = get_user_model()
@@ -132,6 +137,7 @@ class TestCollectionStatusLastSync(TestCase):
     """Integration tests for last_sync: no sync -> trigger sync -> completed execution reflected."""
 
     def setUp(self):
+        """Enable DASHBOARD_COLLECTION and authenticate as a superuser."""
         super().setUp()
         # last_sync is only computed when DASHBOARD_COLLECTION is enabled; set it explicitly
         # rather than relying on the ambient default, which isn't guaranteed across environments.
@@ -144,11 +150,11 @@ class TestCollectionStatusLastSync(TestCase):
         )
         self.client.force_authenticate(user=self.admin)
 
-    def _create_completed_sync_execution(self, completed_at):
-        """Create a Task + a completed TaskExecution for sync_dashboard_job_records."""
+    def _create_completed_sync_execution(self, completed_at, function_name="sync_dashboard_job_records"):
+        """Create a Task + a completed TaskExecution for the given dashboard sync function."""
         task = Task.objects.create(
-            name=f"sync_dashboard_jobs_{completed_at.isoformat()}_0",
-            function_name="sync_dashboard_job_records",
+            name=f"{function_name}_{completed_at.isoformat()}_0",
+            function_name=function_name,
         )
         execution = TaskExecution.objects.create(task=task, status="completed")
         execution.completed_at = completed_at
@@ -174,6 +180,99 @@ class TestCollectionStatusLastSync(TestCase):
         assert response.status_code == 200
         returned = datetime.fromisoformat(response.json()["last_sync"].replace("Z", "+00:00"))
         assert returned == completed_at
+
+    def _create_completed_initial_collection(self, completed_at):
+        """Create the initial_dashboard_collection system task as it looks after a successful run."""
+        task = Task.objects.create(
+            name="initial_dashboard_collection",
+            function_name="collect_dashboard_reports_initial_data",
+            is_system_task=True,
+            cron_expression=None,
+            status="completed",
+        )
+        Task.objects.filter(pk=task.pk).update(completed_at=completed_at)
+        return task
+
+    def _get_last_sync(self):
+        """GET the collection status and return (body, parsed last_sync)."""
+        response = self.client.get(COLLECTION_STATUS_ENDPOINT)
+        assert response.status_code == 200
+        body = response.json()
+        last_sync = body["last_sync"]
+        return body, datetime.fromisoformat(last_sync.replace("Z", "+00:00")) if last_sync else None
+
+    def test_last_sync_reflects_initial_collection_when_no_hourly_sync(self):
+        """With only a completed initial collection, last_sync is the initial task's completed_at."""
+        completed_at = datetime(2026, 9, 29, 10, 0, 0, tzinfo=UTC)
+        self._create_completed_initial_collection(completed_at)
+
+        _, last_sync = self._get_last_sync()
+        assert last_sync == completed_at
+
+    def test_last_sync_prefers_later_hourly_sync_over_initial_collection(self):
+        """When both have completed and the hourly sync finished after the initial collection,
+        last_sync is the sync_dashboard_job_records completed_at."""
+        sync_completed_at = datetime(2026, 9, 29, 11, 3, 6, tzinfo=UTC)
+        self._create_completed_initial_collection(datetime(2026, 9, 29, 10, 0, 0, tzinfo=UTC))
+        self._create_completed_sync_execution(sync_completed_at)
+
+        _, last_sync = self._get_last_sync()
+        assert last_sync == sync_completed_at
+
+    def test_last_sync_survives_init_system_tasks_after_zero_job_initial_collection(self):
+        """Regression: a successful initial collection that writes zero jobs, followed by init-system-tasks
+        (which deletes and recreates system tasks, cascading their executions), still reports its
+        completion time as last_sync when hourly collection is disabled."""
+        Setting.objects.update_or_create(setting_key="METRICS_COLLECTION", defaults={"current_value": "false"})
+        create_system_tasks()
+        initial_task = Task.objects.get(name="initial_dashboard_collection", is_system_task=True)
+
+        # run_with_lock closes DB connections, which would break the test transaction; run the function directly.
+        with (
+            patch(
+                "apps.tasks.tasks_system.run_with_lock",
+                side_effect=lambda _lock_key, _task_name, func, **kwargs: func(**kwargs),
+            ),
+            patch(
+                "apps.dashboard_reports.tasks._collect_data",
+                return_value={"error": False, "data": {"job_count": 0}},
+            ),
+        ):
+            execute_db_task(task_id=initial_task.id)
+
+        initial_task.refresh_from_db()
+        assert initial_task.status == "completed"
+        assert initial_task.completed_at is not None
+        assert not JobData.objects.exists()
+
+        create_system_tasks()
+
+        assert not TaskExecution.objects.filter(task__function_name="collect_dashboard_reports_initial_data").exists()
+        body, last_sync = self._get_last_sync()
+        assert body["initial_collection_status"] == "completed"
+        assert last_sync == initial_task.completed_at
+
+    def test_last_sync_survives_cleanup_old_tasks(self):
+        """Regression: the daily cleanup_old_tasks (5 days) must not delete the completed initial collection,
+        so last_sync keeps its completion time when hourly collection is disabled."""
+        Setting.objects.update_or_create(setting_key="METRICS_COLLECTION", defaults={"current_value": "false"})
+        completed_at = timezone.now() - timedelta(days=6)
+        initial_task = self._create_completed_initial_collection(completed_at)
+        JobData.objects.create(
+            job_id=1001,
+            template_name="Test Template",
+            status="successful",
+            started=datetime(2025, 3, 1, 10, 0, 0, tzinfo=UTC),
+            finished=datetime(2025, 3, 1, 10, 8, 20, tzinfo=UTC),
+            elapsed=500,
+        )
+
+        cleanup_old_tasks(days_old=5)
+
+        assert Task.objects.filter(pk=initial_task.pk).exists()
+        body, last_sync = self._get_last_sync()
+        assert body["initial_collection_status"] == "completed"
+        assert last_sync == completed_at
 
     def test_last_sync_ignores_running_or_pending_executions(self):
         """A running/pending TaskExecution for the same task must not surface as last_sync."""

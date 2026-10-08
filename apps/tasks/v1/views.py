@@ -41,6 +41,7 @@ from rest_framework.response import Response
 
 from apps.tasks.api_utils import ErrorResponseSerializer, build_error_response
 from apps.tasks.models import Task, TaskExecution
+from apps.tasks.task_groups import get_oneshot_task_ids
 
 from .base_views import BaseViewSet
 from .serializers import (
@@ -310,7 +311,11 @@ class TaskViewSet(BaseViewSet):
         dry_run = serializer.validated_data["dry_run"]
 
         cutoff_date = timezone.now() - timedelta(days=days)
-        old_tasks = Task.objects.filter(status__in=["completed", "failed", "cancelled"], completed_at__lt=cutoff_date)
+        # Task-group one-shot system tasks are kept, as in cleanup_old_tasks: init-system-tasks relies on them
+        # (and their completed_at) to keep completed one-shot work from running again.
+        old_tasks = Task.objects.filter(
+            status__in=["completed", "failed", "cancelled"], completed_at__lt=cutoff_date
+        ).exclude(is_system_task=True, name__in=get_oneshot_task_ids())
 
         count = old_tasks.count()
 

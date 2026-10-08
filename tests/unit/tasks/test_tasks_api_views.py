@@ -403,6 +403,34 @@ class TestTaskViewSet(APITestCase):
         # Task should be deleted
         assert not Task.objects.filter(pk=task_id).exists()
 
+    def test_task_cleanup_keeps_oneshot_system_tasks(self):
+        """Cleanup keeps task-group one-shot system tasks but deletes per-run rows of recurring system tasks."""
+        self.client.force_authenticate(user=self.user)
+
+        old_date = django_timezone.now() - timedelta(days=40)
+        oneshot_task = self._create_task_safely(
+            name="initial_dashboard_collection",
+            function_name="collect_dashboard_reports_initial_data",
+            is_system_task=True,
+            status="completed",
+            completed_at=old_date,
+        )
+        per_run_task = self._create_task_safely(
+            name="hourly_health_check (Execution 2026-09-01 08:00:00)",
+            function_name="hello_world",
+            is_system_task=True,
+            status="completed",
+            completed_at=old_date,
+        )
+
+        url = reverse("tasks:v1:task-cleanup")
+        response = self.client.post(url, {"days": 30, "dry_run": False}, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["count"] == 1
+        assert Task.objects.filter(pk=oneshot_task.pk).exists()
+        assert not Task.objects.filter(pk=per_run_task.pk).exists()
+
     def test_task_cleanup_default_values(self):
         """Test cleanup with default values (30 days, dry_run=false)."""
         self.client.force_authenticate(user=self.user)

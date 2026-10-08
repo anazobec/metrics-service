@@ -22,6 +22,8 @@ PATCH_LATEST_SYNC = (
 PATCH_PERM = "ansible_base.rbac.api.permissions.IsSystemAdminOrAuditor.has_permission"
 PATCH_MIN_TS = "apps.dashboard_reports.viewsets.collection_status.JobData.min_timestamp"
 PATCH_SETTING = "apps.dashboard_reports.viewsets.collection_status.Setting"
+INITIAL_COMPLETED_AT = datetime(2026, 9, 29, 10, 0, 0, tzinfo=UTC)
+HOURLY_COMPLETED_AT = datetime(2026, 9, 29, 11, 3, 6, tzinfo=UTC)
 factory = APIRequestFactory()
 view = DashboardCollectionStatusViewSet.as_view({"get": "list"})
 create_view = DashboardCollectionStatusViewSet.as_view({"post": "create"})
@@ -80,6 +82,7 @@ class TestDashboardCollectionStatusViewSet:
         mock_data_task.get_next_run_time.return_value = "2026-04-15T06:00:00+00:00"
         mock_initial_task = MagicMock()
         mock_initial_task.status = "completed"
+        mock_initial_task.completed_at = None
         mock_task_class.objects.filter.return_value.first.side_effect = [
             mock_data_task,
             mock_initial_task,
@@ -228,6 +231,43 @@ class TestLastSync:
         with patch(PATCH_LATEST_SYNC, return_value=mock_execution):
             response = self._get()
         assert response.data["last_sync"] == completed_at
+
+    @pytest.mark.parametrize(
+        ("hourly_completed_at", "initial_status", "initial_completed_at", "expected"),
+        [
+            # no hourly sync (e.g. METRICS_COLLECTION disabled) -> initial collection's completed_at
+            (None, "completed", INITIAL_COMPLETED_AT, INITIAL_COMPLETED_AT),
+            # hourly sync finished after the initial collection -> hourly wins
+            (HOURLY_COMPLETED_AT, "completed", INITIAL_COMPLETED_AT, HOURLY_COMPLETED_AT),
+            # hourly sync older than the initial collection -> initial wins
+            (INITIAL_COMPLETED_AT, "completed", HOURLY_COMPLETED_AT, HOURLY_COMPLETED_AT),
+            # initial collection not (yet) completed -> ignored
+            (None, "running", INITIAL_COMPLETED_AT, None),
+            # completed without completed_at (row from before it was preserved) -> ignored
+            (None, "completed", None, None),
+        ],
+    )
+    @patch(PATCH_MIN_TS, return_value=None)
+    @patch(PATCH_FLAG, return_value=True)
+    @patch(PATCH_TASK)
+    def test_initial_collection_completed_at(  # noqa: PLR0913
+        self,
+        mock_task_class,
+        mock_flag,
+        mock_min_ts,
+        hourly_completed_at,
+        initial_status,
+        initial_completed_at,
+        expected,
+    ):
+        """last_sync is the later of the latest hourly sync and the completed initial collection's completed_at."""
+        mock_task_class.objects.filter.return_value.first.return_value = MagicMock(
+            status=initial_status, completed_at=initial_completed_at
+        )
+        latest_sync = MagicMock(completed_at=hourly_completed_at) if hourly_completed_at else None
+        with patch(PATCH_LATEST_SYNC, return_value=latest_sync):
+            response = self._get()
+        assert response.data["last_sync"] == expected
 
     @patch(PATCH_TASK_EXECUTION)
     def test_query_filters_on_completed_status_and_sync_function(self, mock_task_execution_class):

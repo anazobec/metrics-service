@@ -170,6 +170,47 @@ class TestCleanupOldTasks:
         # Verify recurring task was deleted
         assert not Task.objects.filter(id=recurring_task_id).exists()
 
+    def test_preserves_oneshot_system_tasks(self, user):
+        """Task-group one-shot system tasks are owned by init-system-tasks and never cleaned up, while
+        per-run rows of recurring system tasks and regular tasks are."""
+        from apps.tasks.models import Task
+
+        old_time = timezone.now() - timedelta(days=100)
+        oneshot_task = Task.objects.create(
+            name="initial_dashboard_collection",
+            function_name="collect_dashboard_reports_initial_data",
+            task_data={},
+            created_by=user,
+            status="completed",
+            is_system_task=True,
+            completed_at=old_time,
+        )
+        # The scheduler creates one of these for every run of a recurring system task.
+        per_run_task = Task.objects.create(
+            name="hourly_health_check (Execution 2026-10-07 08:00:00)",
+            function_name="hello_world",
+            task_data={},
+            created_by=user,
+            status="completed",
+            is_system_task=True,
+            completed_at=old_time,
+        )
+        regular_task = Task.objects.create(
+            name="Old Regular Task",
+            function_name="hello_world",
+            task_data={},
+            created_by=user,
+            status="completed",
+            completed_at=old_time,
+        )
+
+        result = cleanup_old_tasks(days_old=30, dry_run=False)
+
+        assert result["tasks_deleted"] == 2
+        assert Task.objects.filter(id=oneshot_task.id).exists()
+        assert not Task.objects.filter(id=per_run_task.id).exists()
+        assert not Task.objects.filter(id=regular_task.id).exists()
+
     def test_uses_completed_at_when_available(self, user):
         """Test uses completed_at field when available."""
         # Arrange

@@ -296,7 +296,7 @@ def create_system_tasks() -> dict[str, Any]:
     """
     try:
         from .models import Task
-        from .task_groups import get_all_tasks_for_init
+        from .task_groups import get_all_tasks_for_init, get_oneshot_task_ids
     except ImportError:
         # Handle case where Django isn't fully set up yet
         return {"error": "ERROR_DJANGO_NOT_READY", "created": 0, "removed": 0}
@@ -309,12 +309,16 @@ def create_system_tasks() -> dict[str, Any]:
     # one-time work. Resource sync is preserved only for the same installed service/DAB
     # build; an upgrade or an earlier failed sync leaves it pending. Recurring tasks are
     # always recreated as pending so their schedules stay in sync with updated cron expressions.
-    completed_oneshots = set(
+    # completed_at is kept alongside the name: it is the only record of when the one-shot work
+    # actually finished (e.g. the dashboard collection status reports it as last_sync). Only task-group
+    # one-shots are snapshotted, not the per-run rows the scheduler creates for recurring system tasks.
+    completed_oneshots = dict(
         Task.objects.filter(
             is_system_task=True,
             cron_expression__isnull=True,
             status="completed",
-        ).values_list("name", flat=True)
+            name__in=get_oneshot_task_ids(),
+        ).values_list("name", "completed_at")
     )
     previous_sync = Task.objects.filter(
         name=RESOURCE_SYNC_TASK_NAME,
@@ -323,7 +327,7 @@ def create_system_tasks() -> dict[str, Any]:
         status="completed",
     ).first()
     if previous_sync is None or previous_sync.task_data.get(RESOURCE_SYNC_VERSION_KEY) != resource_sync_version:
-        completed_oneshots.discard(RESOURCE_SYNC_TASK_NAME)
+        completed_oneshots.pop(RESOURCE_SYNC_TASK_NAME, None)
 
     # Remove all existing system tasks
     _, deletion_info = Task.objects.filter(is_system_task=True).delete()
@@ -352,14 +356,16 @@ def create_system_tasks() -> dict[str, Any]:
             results["tasks"].append(f"Error with {task_id}: {str(e)}")
             logger.exception(f"Failed to create task {task_id}: {e}")
 
-    # Restore completed status for one-shot tasks that already ran successfully,
-    # preventing them from re-running on the next upgrade.
+    # Restore completed status and completion time for one-shot tasks that already ran
+    # successfully, preventing them from re-running on the next upgrade.
     if completed_oneshots:
-        restored = Task.objects.filter(
-            is_system_task=True,
-            cron_expression__isnull=True,
-            name__in=completed_oneshots,
-        ).update(status="completed")
+        restored = 0
+        for name, completed_at in completed_oneshots.items():
+            restored += Task.objects.filter(
+                is_system_task=True,
+                cron_expression__isnull=True,
+                name=name,
+            ).update(status="completed", completed_at=completed_at)
         if restored:
             logger.info(f"Preserved completed status for {restored} one-shot task(s): {sorted(completed_oneshots)}")
 

@@ -19,6 +19,7 @@ from apps.tasks.task_groups import (
     TaskGroup,
     get_all_enabled_tasks,
     get_all_tasks_for_init,
+    get_oneshot_task_ids,
 )
 
 pytestmark = pytest.mark.unit
@@ -334,6 +335,16 @@ class TestTaskGroupFunctions(TestCase):
         assert "daily_metrics_rollup" not in task_ids
         assert "cleanup_metrics_data" not in task_ids
         assert "daily_anonymize" in task_ids
+
+    def test_get_oneshot_task_ids_returns_only_tasks_without_cron(self):
+        """Only one-shot (cron=None) task-group tasks are returned, never recurring ones."""
+        oneshot_ids = get_oneshot_task_ids()
+
+        assert "initial_dashboard_collection" in oneshot_ids
+        assert "initial_resource_sync" in oneshot_ids
+        assert "hourly_health_check" not in oneshot_ids
+        assert "daily_task_cleanup" not in oneshot_ids
+        assert all(not get_all_tasks_for_init()[task_id].get("cron") for task_id in oneshot_ids)
 
 
 class TestIndirectNodeCollectionGroup(TestCase):

@@ -67,6 +67,7 @@ class DashboardCollectionStatusViewSet(ViewSet):
 
     @staticmethod
     def _get_latest_completed_hourly_sync() -> TaskExecution | None:
+        """Return the most recent completed sync_dashboard_job_records execution, or None."""
         # Tracks sync_dashboard_job_records (JobData), not sync_dashboard_host_summaries:
         # the latter can silently skip records with no retry (see docs/dashboard-sync.md
         # "Ordering constraint"), so a completed run there doesn't guarantee fresh data.
@@ -138,6 +139,11 @@ class DashboardCollectionStatusViewSet(ViewSet):
             ).first()
             if initial_task:
                 initial_collection_status = initial_task.status
+                # Task.completed_at (not its TaskExecution) survives init-system-tasks and cleanup_old_tasks,
+                # so it still reports the initial collection when no hourly sync has completed since
+                # (e.g. METRICS_COLLECTION disabled), including a collection that wrote zero jobs.
+                if initial_collection_status == "completed" and initial_task.completed_at:
+                    last_sync = max(filter(None, (last_sync, initial_task.completed_at)))
 
         return Response(
             {

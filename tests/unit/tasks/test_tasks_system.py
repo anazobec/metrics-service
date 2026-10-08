@@ -12,12 +12,14 @@ Organized into clear test classes:
 - TestEdgeCasesAndErrorHandling: Edge cases, error conditions, and resilience
 """
 
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.utils import timezone
 
 from apps.tasks import tasks, tasks_system
 from apps.tasks.models import Task, TaskExecution
@@ -365,6 +367,33 @@ class TestSystemTaskCreation(TestCase):
 
         task = Task.objects.get(name="initial_dashboard_collection", is_system_task=True)
         assert task.status == "completed"
+
+    @pytest.mark.django_db(transaction=True)
+    def test_completed_oneshot_keeps_completed_at_across_reinit(self):
+        """A completed one-shot task keeps its original completed_at after create_system_tasks()."""
+        completed_at = timezone.now() - timedelta(days=10)
+        Task.objects.create(
+            name="initial_dashboard_collection",
+            function_name="hello_world",
+            is_system_task=True,
+            cron_expression=None,
+            status="completed",
+            completed_at=completed_at,
+        )
+        one_shot_config = {
+            "initial_dashboard_collection": {
+                "function": "hello_world",
+                "description": "one-shot",
+                "cron": None,
+                "args": {},
+            }
+        }
+        with patch("apps.tasks.task_groups.get_all_tasks_for_init", return_value=one_shot_config):
+            tasks_system.create_system_tasks()
+
+        task = Task.objects.get(name="initial_dashboard_collection", is_system_task=True)
+        assert task.status == "completed"
+        assert task.completed_at == completed_at
 
     @pytest.mark.django_db(transaction=True)
     def test_completed_initial_resource_sync_is_preserved_for_same_build(self):

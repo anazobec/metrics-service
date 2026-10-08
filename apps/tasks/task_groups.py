@@ -448,3 +448,14 @@ def get_all_tasks_for_init() -> dict[str, dict[str, Any]]:
             all_tasks[task_id] = task_config
 
     return all_tasks
+
+
+def get_oneshot_task_ids() -> set[str]:
+    """
+    Return the task ids of one-shot (cron=None) tasks defined in the task groups.
+
+    These are the system tasks whose completed state init-system-tasks preserves. Per-run rows that
+    the scheduler creates for recurring system tasks (e.g. "hourly_health_check (Execution ...)")
+    are also non-recurring system tasks, but their names never match a task id.
+    """
+    return {task_id for task_id, config in get_all_tasks_for_init().items() if not config.get("cron")}
