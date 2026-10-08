@@ -128,6 +128,17 @@ def test_persist_storage_failure_is_swallowed():
         persist_analytics_payload("config", {}, since=None, until=None, started_at=started, finished_at=finished)
 
 
+def test_persist_storage_failure_can_be_raised():
+    started, finished = _times()
+    with (
+        patch("apps.analytics.persist.AnalyticsPayload.objects.create", side_effect=RuntimeError("database down")),
+        pytest.raises(RuntimeError, match="database down"),
+    ):
+        persist_analytics_payload(
+            "config", {}, since=None, until=None, started_at=started, finished_at=finished, raise_on_error=True
+        )
+
+
 def test_generic_collection_passes_raw_data_to_persistence():
     from apps.tasks.utils import generic_collect_metrics
 
@@ -156,6 +167,7 @@ def test_generic_collection_passes_raw_data_to_persistence():
         until=None,
         started_at=ANY,
         finished_at=ANY,
+        raise_on_error=False,
     )
 
 
@@ -186,3 +198,29 @@ def test_generic_collection_does_not_persist_analytics_only_data_to_hourly_table
 
     assert result["status"] == "success"
     persist_collection.assert_not_called()
+
+
+def test_generic_analytics_only_collection_fails_when_persistence_fails():
+    from apps.tasks.utils import generic_collect_metrics
+
+    collector = MagicMock()
+    collector.gather.return_value = {"rows": [1, 2]}
+    collector_func = MagicMock(return_value=collector)
+
+    with patch("apps.analytics.persist.persist_analytics_payload", side_effect=RuntimeError("database down")):
+        result = generic_collect_metrics(
+            collector_type="analytics_only",
+            collector_registry={
+                "analytics_only": {
+                    "collector_func": collector_func,
+                    "rollup_processor": None,
+                    "persist_to_hourly": False,
+                }
+            },
+            collection_mode="snapshot",
+            timestamp=_times()[0],
+            db_connection=MagicMock(),
+        )
+
+    assert result["status"] == "error"
+    assert "database down" in result["error"]

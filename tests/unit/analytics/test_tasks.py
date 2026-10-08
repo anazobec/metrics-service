@@ -1,6 +1,6 @@
 """Tests for the on-demand analytics collection task."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pandas as pd
 import pytest
@@ -84,6 +84,31 @@ def test_on_demand_failure_does_not_persist_partial_payload(_mock_db):
         result = collect_analytics_on_demand(collector=UNIFIED, since=since, until=until)
     assert result["status"] == "error"
     assert not AnalyticsPayload.objects.exists()
+
+
+@patch("apps.analytics.tasks.get_db_connection")
+def test_on_demand_persistence_failure_fails_task(_mock_db):
+    func = _fake_collector({"version": "9"})
+    with (
+        patch("apps.analytics.tasks._collector_func", return_value=func),
+        patch(
+            "apps.analytics.tasks.persist_analytics_payload",
+            side_effect=RuntimeError("database down"),
+        ) as persist,
+    ):
+        result = collect_analytics_on_demand(collector="controller.config")
+
+    assert result["status"] == "error"
+    assert result["error"] == "Persistence failed: database down"
+    persist.assert_called_once_with(
+        "config",
+        {"version": "9"},
+        since=None,
+        until=None,
+        started_at=ANY,
+        finished_at=ANY,
+        raise_on_error=True,
+    )
 
 
 @patch("apps.analytics.tasks.get_db_connection")

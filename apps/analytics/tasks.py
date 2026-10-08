@@ -54,12 +54,10 @@ def collect_analytics_on_demand(**kwargs) -> dict[str, Any]:
         dict: standard task result.
     """
     collector = kwargs.get("collector")
-    if not collector:
-        return create_task_result("error", error="collector parameter is required")
-
-    entry = get_entry(collector)
+    entry = get_entry(collector) if collector else None
     if entry is None or not entry.enabled:
-        return create_task_result("error", error=f"Unknown or disabled collector: {collector}")
+        error = "collector parameter is required" if not collector else f"Unknown or disabled collector: {collector}"
+        return create_task_result("error", error=error)
 
     raw_since = kwargs.get("since")
     raw_until = kwargs.get("until")
@@ -102,13 +100,18 @@ def collect_analytics_on_demand(**kwargs) -> dict[str, Any]:
         logger.exception("On-demand analytics collection failed for %s", collector)
         return create_task_result("error", {"collector": collector}, error=f"Collection failed: {e}")
 
-    # Persistence appends the completed collection and maps collector_type to the public name.
-    persist_analytics_payload(
-        entry.collector_type,
-        raw_data,
-        since=since,
-        until=until,
-        started_at=started,
-        finished_at=finished,
-    )
+    # An on-demand task is only successful if its payload is stored.
+    try:
+        persist_analytics_payload(
+            entry.collector_type,
+            raw_data,
+            since=since,
+            until=until,
+            started_at=started,
+            finished_at=finished,
+            raise_on_error=True,
+        )
+    except Exception as e:
+        logger.exception("On-demand analytics persistence failed for %s", collector)
+        return create_task_result("error", {"collector": collector}, error=f"Persistence failed: {e}")
     return create_task_result("success", {"collector": collector, "message": f"Collected {collector}"})
