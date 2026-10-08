@@ -190,6 +190,15 @@ paths:
                       last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.unified_jobs_dashboard/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.unified_jobs_dashboard/collect/
+                    - name: controller.unified_jobs
+                      description: Unified job records with status, timing, organization,
+                        inventory, execution environment, template, project SCM type,
+                        and job details.
+                      mode: hourly
+                      accepts_since_until: true
+                      last_collect: null
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.unified_jobs/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.unified_jobs/collect/
                     - name: controller.job_host_summary_service
                       description: Per-job host results and counts, with host, job,
                         template, inventory, organization, and project context.
@@ -198,6 +207,14 @@ paths:
                       last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.job_host_summary_service/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.job_host_summary_service/collect/
+                    - name: controller.job_host_summary
+                      description: Per-job host results, counts, host connection variables,
+                        and job, template, inventory, organization, and project context.
+                      mode: hourly
+                      accepts_since_until: true
+                      last_collect: null
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.job_host_summary/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.job_host_summary/collect/
                     - name: controller.credentials_service
                       description: Distinct managed credential types used by jobs
                         completed in the collection window.
@@ -215,6 +232,14 @@ paths:
                       last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.main_jobevent_service/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.main_jobevent_service/collect/
+                    - name: controller.main_jobevent
+                      description: Runner event records associated with job host summaries,
+                        including event action, task/play/role, host, and result flags.
+                      mode: hourly
+                      accepts_since_until: true
+                      last_collect: null
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.main_jobevent/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.main_jobevent/collect/
                     - name: controller.events_table
                       description: Raw job events modified in the window, including
                         event details, playbook statistics, task/play/role, host,
@@ -386,6 +411,14 @@ paths:
                       last_collect: null
                       rows_url: https://metrics.example.com/api/v1/analytics/controller.main_hostmetric/
                       collect_url: https://metrics.example.com/api/v1/analytics/controller.main_hostmetric/collect/
+                    - name: controller.main_indirectmanagednodeaudit
+                      description: Audit records for indirect managed nodes, including
+                        their organization and collection data.
+                      mode: daily
+                      accepts_since_until: true
+                      last_collect: null
+                      rows_url: https://metrics.example.com/api/v1/analytics/controller.main_indirectmanagednodeaudit/
+                      collect_url: https://metrics.example.com/api/v1/analytics/controller.main_indirectmanagednodeaudit/collect/
                   summary: Enabled analytics collectors
           description: ''
       x-ai-description: Retrieve single analytic

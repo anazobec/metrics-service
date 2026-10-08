@@ -46,7 +46,7 @@ def test_persist_none_becomes_empty_dict():
 def test_persist_disabled_collector_is_noop():
     started, finished = _times()
     persist_analytics_payload(
-        "task_executions_service", {"x": 1}, since=None, until=None, started_at=started, finished_at=finished
+        "config_django", {"x": 1}, since=None, until=None, started_at=started, finished_at=finished
     )
     assert not AnalyticsPayload.objects.exists()
 

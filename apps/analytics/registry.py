@@ -23,12 +23,10 @@ Tiers
 -----
 * **ENABLED** — registered in the service, standalone-safe (read-only AWX DB, SQL only),
   customer-facing. Persisted + exposed.
-* **DISABLED** — registered in the service but intentionally off for the API. Kept here so they
-  can be enabled later without rework. Not persisted, not exposed.
-* **EXCLUDED** — exist in metrics-utility but are not exposed, either because a preferred variant
-  supersedes them or because they cannot run in metrics-service. Documentation only.
+* **NOT ENABLED** — known collectors that are not exposed by the analytics API. Some are used by
+  other service pipelines; others are not wired for analytics collection.
 
-Every disabled or excluded entry must have a ``note`` explaining why it is not enabled.
+Every not-enabled entry must have a ``note`` explaining its status.
 
 FOLLOWUPS (noted back in the anstrat-1587 plan):
 * CI drift test comparing this registry vs the collectors discovered in the service — foundation 03.
@@ -57,7 +55,7 @@ class CollectorEntry:
         collector_type: metrics-service key (used by generic_collect_metrics and the
             ``_get_*_collectors()`` registries).
         mode: ``"hourly"`` / ``"snapshot"`` / ``"daily"`` (scheduling + window model); ``""`` for
-            EXCLUDED collectors (never scheduled).
+            entries without an analytics collection mode.
         enabled: whether the collector is persisted and exposed by the API.
         database: which Django DB connection the collector reads (defaults to ``awx``).
         note: why a collector is disabled/excluded, or any relevant caveat.
@@ -101,11 +99,26 @@ _ENABLED: list[CollectorEntry] = [
         description="Job executions, including status and timing, organization, inventory, project, template, execution environment, launcher, labels, and host count.",
     ),
     CollectorEntry(
+        "controller.unified_jobs",
+        collector_type="unified_jobs_base",
+        mode="hourly",
+        enabled=True,
+        description="Unified job records with status, timing, organization, inventory, execution environment, template, project SCM type, and job details.",
+    ),
+    CollectorEntry(
         "controller.job_host_summary_service",
         collector_type="job_host_summary_service",
         mode="hourly",
         enabled=True,
         description="Per-job host results and counts, with host, job, template, inventory, organization, and project context.",
+    ),
+    CollectorEntry(
+        "controller.job_host_summary",
+        collector_type="job_host_summary",
+        mode="hourly",
+        enabled=SERVICE_FUNCTIONS_AVAILABLE,
+        note="requires metrics-utility PostgreSQL YAML/JSON helper functions",
+        description="Per-job host results, counts, host connection variables, and job, template, inventory, organization, and project context.",
     ),
     CollectorEntry(
         "controller.credentials_service",
@@ -120,6 +133,13 @@ _ENABLED: list[CollectorEntry] = [
         mode="hourly",
         enabled=True,
         description="Selected job events for jobs completed in the window, including event actions, task/play/role, host, result flags, warnings, and deprecations.",
+    ),
+    CollectorEntry(
+        "controller.main_jobevent",
+        collector_type="main_jobevent_legacy",
+        mode="hourly",
+        enabled=True,
+        description="Runner event records associated with job host summaries, including event action, task/play/role, host, and result flags.",
     ),
     CollectorEntry(
         "controller.events_table",
@@ -264,56 +284,26 @@ _ENABLED: list[CollectorEntry] = [
         enabled=SERVICE_FUNCTIONS_AVAILABLE,
         description="Host automation and deletion metrics, counters, inventory usage, and selected host identity and connection facts.",
     ),
+    CollectorEntry(
+        "controller.main_indirectmanagednodeaudit",
+        collector_type="indirect_managed_nodes",
+        mode="daily",
+        enabled=True,
+        description="Audit records for indirect managed nodes, including their organization and collection data.",
+    ),
 ]
 
 # ---------------------------------------------------------------------------
-# DISABLED — registered in the service, but intentionally off for the API.
-# Kept here so they can be enabled later without rework.
+# NOT ENABLED — known collectors not exposed by the analytics API.
 # ---------------------------------------------------------------------------
-_DISABLED: list[CollectorEntry] = [
+_NOT_ENABLED: list[CollectorEntry] = [
     CollectorEntry(
         "service.task_executions_service",
         collector_type="task_executions_service",
         mode="daily",
         enabled=False,
         database="default",
-        note="reads the metrics-service own DB (tasks_taskexecution) — pipeline/observability, "
-        "not customer data. Needs a product decision to expose ops data.",
-    ),
-    CollectorEntry(
-        "controller.main_indirectmanagednodeaudit",
-        collector_type="indirect_managed_nodes",
-        mode="daily",
-        enabled=False,
-        note="indirect node audit needs the ANSTRAT-2160 path to GA before exposing.",
-    ),
-]
-
-# ---------------------------------------------------------------------------
-# EXCLUDED — metrics-utility collectors not exposed by the analytics API.
-# Documentation only; never scheduled or exposed. (The record of *why* they're absent.)
-# ---------------------------------------------------------------------------
-_EXCLUDED: list[CollectorEntry] = [
-    CollectorEntry(
-        "controller.job_host_summary",
-        collector_type="job_host_summary",
-        mode="",
-        enabled=False,
-        note="legacy collector superseded by job_host_summary_service.",
-    ),
-    CollectorEntry(
-        "controller.main_jobevent",
-        collector_type="main_jobevent_legacy",
-        mode="",
-        enabled=False,
-        note="legacy CCSP collector superseded by the partition-optimized main_jobevent_service.",
-    ),
-    CollectorEntry(
-        "controller.unified_jobs",
-        collector_type="unified_jobs_base",
-        mode="",
-        enabled=False,
-        note="base collector superseded by unified_jobs_dashboard, which includes the required dashboard fields.",
+        note="used by the anonymized collection pipeline only; not exposed by the analytics API.",
     ),
     CollectorEntry(
         "controller.config_django",
@@ -338,14 +328,13 @@ _EXCLUDED: list[CollectorEntry] = [
     ),
 ]
 
-_ALL: tuple[CollectorEntry, ...] = (*_ENABLED, *_DISABLED, *_EXCLUDED)
+_ALL: tuple[CollectorEntry, ...] = (*_ENABLED, *_NOT_ENABLED)
 
 # Public lookup by public name (group.function).
 COLLECTORS: dict[str, CollectorEntry] = {e.name: e for e in _ALL}
 
 # Reverse lookup by metrics-service collector_type — used by the persist hook, which only knows
-# the internal key. Only enabled+disabled entries have meaningful collector_types here; excluded
-# ones are never persisted so collisions among them don't matter.
+# the internal key. Not-enabled entries are never persisted so collisions among them don't matter.
 _BY_TYPE: dict[str, CollectorEntry] = {e.collector_type: e for e in _ALL}
 
 

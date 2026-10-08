@@ -34,9 +34,12 @@ def _get_hourly_collectors():
     from metrics_utility.library.collectors.controller import (
         credentials_service,
         events_table,
+        job_host_summary,
         job_host_summary_service,
+        main_jobevent,
         main_jobevent_service,
         query_info,
+        unified_jobs,
         unified_jobs_dashboard,
         workflow_job_node_table,
     )
@@ -49,6 +52,12 @@ def _get_hourly_collectors():
             "description": "Job host summary metrics (partition-optimized)",
             "post_collect_hook_factory": _build_dashboard_host_summary_sync_hook,
         },
+        "job_host_summary": {
+            "collector_func": job_host_summary,
+            "rollup_processor": None,
+            "persist_to_hourly": False,
+            "description": "Raw job host summary records",
+        },
         "unified_jobs": {
             # unified_jobs_dashboard extends the base unified_jobs query with dashboard-specific
             # fields (project_id/name, launched_by, label_ids, num_hosts); the registry key is
@@ -57,6 +66,12 @@ def _get_hourly_collectors():
             "rollup_processor": JobsAnonymizedRollup,
             "description": "Unified jobs metrics",
             "post_collect_hook_factory": _build_dashboard_sync_hook,
+        },
+        "unified_jobs_base": {
+            "collector_func": unified_jobs,
+            "rollup_processor": None,
+            "persist_to_hourly": False,
+            "description": "Base unified job records",
         },
         "credentials_service": {
             "collector_func": credentials_service,
@@ -67,6 +82,12 @@ def _get_hourly_collectors():
             "collector_func": main_jobevent_service,
             "rollup_processor": EventModulesAnonymizedRollup,
             "description": "Job events (event modules) metrics",
+        },
+        "main_jobevent_legacy": {
+            "collector_func": main_jobevent,
+            "rollup_processor": None,
+            "persist_to_hourly": False,
+            "description": "Raw legacy job event records",
         },
         "events_table": {
             "collector_func": events_table,

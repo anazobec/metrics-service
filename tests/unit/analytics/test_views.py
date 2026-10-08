@@ -40,6 +40,7 @@ def test_root_lists_enabled_collectors(authenticated_client):
         "execution environment, launcher, labels, and host count."
     )
     assert "service.task_executions_service" not in names
+    assert "dashboard.dashboard_jobs" not in names
     assert all(
         collector["rows_url"].startswith("http://testserver/api/v1/analytics/")
         for collector in response.json()["collectors"]

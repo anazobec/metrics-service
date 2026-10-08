@@ -25,9 +25,16 @@ def test_enabled_collectors_are_all_enabled():
     assert enabled, "expected at least one enabled collector"
     assert all(e.enabled for e in enabled.values())
     assert all(e.description for e in enabled.values())
-    # Disabled/excluded collectors must not leak into the enabled set.
+    assert {
+        "controller.job_host_summary",
+        "controller.main_jobevent",
+        "controller.unified_jobs",
+    } <= set(enabled)
+    # Pipeline-only, dashboard-only, AWX in-process, and external Prometheus collectors stay off.
     assert "service.task_executions_service" not in enabled
-    assert "controller.job_host_summary" not in enabled
+    assert "dashboard.dashboard_jobs" not in enabled
+    assert "controller.config_django" not in enabled
+    assert "others.total_workers_vcpu" not in enabled
 
 
 @pytest.mark.unit
@@ -47,6 +54,16 @@ def test_get_entry_by_type_maps_internal_key():
 
 
 @pytest.mark.unit
+def test_indirect_managed_node_audit_is_enabled():
+    entry = registry.get_entry("controller.main_indirectmanagednodeaudit")
+    assert entry is not None
+    assert entry.collector_type == "indirect_managed_nodes"
+    assert entry.mode == "daily"
+    assert entry.enabled is True
+    assert entry in registry.enabled_collectors().values()
+
+
+@pytest.mark.unit
 def test_registry_covers_metrics_utility_collectors():
     expected = {
         *(f"controller.{name}" for name in controller_collectors),
@@ -55,10 +72,11 @@ def test_registry_covers_metrics_utility_collectors():
         "dashboard.dashboard_jobs",
     }
     assert set(registry.COLLECTORS) == expected
+    assert len(registry.COLLECTORS) == len(registry._ALL)
 
 
 @pytest.mark.unit
-def test_disabled_collectors_have_reasons():
+def test_not_enabled_collectors_have_reasons():
     assert all(entry.note for entry in registry.COLLECTORS.values() if not entry.enabled)
 
 

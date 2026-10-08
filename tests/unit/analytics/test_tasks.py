@@ -26,6 +26,15 @@ def test_on_demand_unknown_collector_errors():
     assert not AnalyticsPayload.objects.exists()
 
 
+@pytest.mark.parametrize("collector", ["service.task_executions_service", "dashboard.dashboard_jobs"])
+def test_on_demand_disabled_collector_errors(collector):
+    result = collect_analytics_on_demand(collector=collector)
+
+    assert result["status"] == "error"
+    assert "Unknown or disabled collector" in result["error"]
+    assert not AnalyticsPayload.objects.exists()
+
+
 def test_on_demand_missing_collector_errors():
     result = collect_analytics_on_demand()
     assert result["status"] == "error"

@@ -18,7 +18,7 @@ The registry is the source of truth in
 - `enabled`: whether the collector is persisted and exposed
 - `database`: source database, defaulting to `awx`
 - `description`: customer-facing summary of the data returned by the collector
-- `note`: explanation for disabled or excluded entries
+- `note`: explanation for not-enabled entries or a relevant caveat
 
 `accepts_since_until` is derived from `mode`. It describes whether the collector
 can receive `since` and `until` bounds; it does not require both bounds to be
@@ -30,12 +30,15 @@ All enabled collectors are persisted and exposed by the read API. Except for
 `controller.query_info`, which reports collection metadata, these collectors
 read from the Controller (`awx`) database.
 
-| Name | `collector_type` | Mode | `accepts_since_until` | Controller data extracted |
+| Name | `collector_type` | Mode | `accepts_since_until` | Data extracted |
 | --- | --- | --- | --- | --- |
 | `controller.unified_jobs_dashboard` | `unified_jobs` | hourly | yes | Job executions, including status and timing, organization, inventory, project, template, execution environment, launcher, labels, and host count. |
+| `controller.unified_jobs` | `unified_jobs_base` | hourly | yes | Unified job records with status, timing, organization, inventory, execution environment, template, project SCM type, and job details. |
+| `controller.job_host_summary` | `job_host_summary` | hourly | yes | Per-job host results, counts, host connection variables, and job, template, inventory, organization, and project context. |
 | `controller.job_host_summary_service` | `job_host_summary_service` | hourly | yes | Per-job host results and counts, with host, job, template, inventory, organization, and project context. |
 | `controller.credentials_service` | `credentials_service` | hourly | yes | Distinct managed credential types used by jobs completed in the collection window. |
 | `controller.main_jobevent_service` | `main_jobevent_service` | hourly | yes | Selected job events for jobs completed in the window, including event actions, task/play/role, host, result flags, warnings, and deprecations. |
+| `controller.main_jobevent` | `main_jobevent_legacy` | hourly | yes | Runner event records associated with job host summaries, including event action, task/play/role, host, and result flags. |
 | `controller.events_table` | `events_table` | hourly | yes | Raw job events modified in the window, including event details, playbook statistics, task/play/role, host, timing, warnings, and deprecations. |
 | `controller.workflow_job_node_table` | `workflow_job_node_table` | hourly | yes | Workflow job node executions, their job/template/workflow/inventory references, and success, failure, and always edges. |
 | `controller.query_info` | `query_info` | hourly | yes | Collection metadata: requested bounds and collection type; it does not query the Controller database. |
@@ -56,22 +59,20 @@ read from the Controller (`awx`) database.
 | `controller.main_host` | `main_host` | snapshot | no | Enabled inventory hosts with inventory and organization context, last automation time, connection variables, and selected hardware and system facts. |
 | `controller.main_host_daily` | `main_host_daily` | daily | yes | Enabled hosts created or modified in the window, with the same inventory, organization, automation, connection, and selected fact data as `main_host`. |
 | `controller.main_hostmetric` | `main_hostmetric` | daily | yes | Host automation and deletion metrics, counters, inventory usage, and selected host identity and connection facts. |
+| `controller.main_indirectmanagednodeaudit` | `indirect_managed_nodes` | daily | yes | Audit records for indirect managed nodes, including their organization and collection data. |
 
-## Disabled And Excluded Collectors
+## Not-enabled Collectors
 
 These entries remain in the registry so their status and reason are visible to
-developers. They are not persisted or exposed by the analytics API.
+developers. They are not exposed by the analytics API. Some may still be used by
+other service pipelines.
 
-| Name | `collector_type` | Status | Reason |
-| --- | --- | --- | --- |
-| `service.task_executions_service` | `task_executions_service` | disabled | Reads metrics-service operational task data, not customer data; product decision needed. |
-| `controller.main_indirectmanagednodeaudit` | `indirect_managed_nodes` | disabled | Requires the ANSTRAT-2160 path to reach GA. |
-| `controller.job_host_summary` | `job_host_summary` | excluded | Legacy collector superseded by `job_host_summary_service`. |
-| `controller.main_jobevent` | `main_jobevent_legacy` | excluded | Legacy collector superseded by `main_jobevent_service`. |
-| `controller.unified_jobs` | `unified_jobs_base` | excluded | Base collector superseded by `unified_jobs_dashboard`. |
-| `controller.config_django` | `config_django` | excluded | AWX in-process collector superseded by the SQL `config` collector. |
-| `others.total_workers_vcpu` | `total_workers_vcpu` | excluded | Prometheus/CLI billing path, not registered in metrics-service. |
-| `dashboard.dashboard_jobs` | `dashboard_jobs` | excluded | Belongs to the separate dashboard synchronization pipeline. |
+| Name | `collector_type` | Reason |
+| --- | --- | --- |
+| `service.task_executions_service` | `task_executions_service` | Used by the anonymized collection pipeline only; not exposed by the analytics API. |
+| `controller.config_django` | `config_django` | AWX in-process collector superseded by the SQL `config` collector. |
+| `others.total_workers_vcpu` | `total_workers_vcpu` | Prometheus/CLI billing path, not registered in metrics-service. |
+| `dashboard.dashboard_jobs` | `dashboard_jobs` | Belongs to the separate dashboard synchronization pipeline. |
 
 ## Read API
 
