@@ -1,6 +1,7 @@
 """Tests for persisting raw collector output into AnalyticsPayload."""
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from unittest.mock import ANY, MagicMock, patch
 
 import pandas as pd
@@ -35,6 +36,18 @@ def test_persist_dict_payload():
     )
     row = AnalyticsPayload.objects.get(collector="controller.config")
     assert row.payload == {"version": "1.2.3"}
+
+
+def test_persist_nested_dict_converts_decimal_values():
+    started, finished = _times()
+    payload = {"instance-1": {"uuid": "instance-1", "cpu": Decimal("1.0")}}
+
+    persist_analytics_payload(
+        "instance_info", payload, since=None, until=None, started_at=started, finished_at=finished
+    )
+
+    row = AnalyticsPayload.objects.get(collector="controller.instance_info")
+    assert row.payload == {"instance-1": {"uuid": "instance-1", "cpu": "1.0"}}
 
 
 def test_persist_none_becomes_empty_dict():

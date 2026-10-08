@@ -13,6 +13,8 @@ from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.core.json_utils import json_size_bytes
+
 from ..utils import (
     create_task_result,
     log_task_execution,
@@ -199,8 +201,6 @@ def send_to_segment(user_id: str, event_name: str, segment_data: dict, segment_m
         return create_task_result("unavailable", error="segment_not_available")
 
     try:
-        import json
-
         from django.conf import settings
 
         # Get Segment write key from settings
@@ -210,7 +210,7 @@ def send_to_segment(user_id: str, event_name: str, segment_data: dict, segment_m
             return create_task_result("unavailable", error="SEGMENT_WRITE_KEY not configured in settings")
 
         # Calculate data size for logging
-        data_size = len(json.dumps(segment_data).encode("utf-8"))
+        data_size = json_size_bytes(segment_data)
 
         log_task_execution(
             "segment_send",

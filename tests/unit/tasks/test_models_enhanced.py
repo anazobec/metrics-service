@@ -11,8 +11,10 @@ Tests cover:
 """
 
 from datetime import date, timedelta
+from decimal import Decimal
 from unittest.mock import patch
 
+import numpy as np
 import pytest
 from django.utils import timezone
 
@@ -348,6 +350,18 @@ class TestHourlyMetricsCollection:
         expected_size = len(json.dumps(raw_data).encode("utf-8"))
         assert collection.data_size_bytes == expected_size
 
+    def test_save_normalizes_json_values(self):
+        collection = HourlyMetricsCollection(
+            collector_type="job_host_summary_service",
+            collection_timestamp=timezone.now(),
+            raw_data={"cpu": Decimal("1.0"), "count": np.int64(2), "missing": float("nan")},
+        )
+
+        collection.save()
+        collection.refresh_from_db()
+
+        assert collection.raw_data == {"cpu": "1.0", "count": 2, "missing": None}
+
 
 @pytest.mark.unit
 @pytest.mark.django_db
@@ -569,3 +583,19 @@ class TestAnonymizedMetricsPayload:
 
         expected_size = len(json.dumps(anonymized_data).encode("utf-8"))
         assert payload.payload_size_bytes == expected_size
+
+    def test_save_normalizes_json_values(self):
+        summary = DailyMetricsSummary.objects.create(
+            summary_date=date(2024, 1, 15),
+            aggregated_metrics={},
+        )
+        payload = AnonymizedMetricsPayload(
+            summary_date=date(2024, 1, 15),
+            anonymized_data={"cpu": Decimal("1.0"), "count": np.int64(2), "missing": float("nan")},
+            daily_summary=summary,
+        )
+
+        payload.save()
+        payload.refresh_from_db()
+
+        assert payload.anonymized_data == {"cpu": "1.0", "count": 2, "missing": None}

@@ -12,6 +12,8 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from apps.core.json_utils import json_size_bytes, to_jsonable
+
 # Import base classes and mixins from core
 from apps.tasks.mixins import StatusTrackingMixin
 
@@ -407,9 +409,8 @@ class HourlyMetricsCollection(CommonModel, AuditableModel):
         Returns:
             None
         """
-        import json
-
-        self.data_size_bytes = len(json.dumps(self.raw_data).encode("utf-8"))
+        self.raw_data = to_jsonable(self.raw_data)
+        self.data_size_bytes = json_size_bytes(self.raw_data)
         super().save(*args, **kwargs)
 
 
@@ -616,7 +617,6 @@ class AnonymizedMetricsPayload(CommonModel, AuditableModel):
         Returns:
             None
         """
-        import json
-
-        self.payload_size_bytes = len(json.dumps(self.anonymized_data).encode("utf-8"))
+        self.anonymized_data = to_jsonable(self.anonymized_data)
+        self.payload_size_bytes = json_size_bytes(self.anonymized_data)
         super().save(*args, **kwargs)

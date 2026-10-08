@@ -17,32 +17,9 @@ from typing import Any
 
 from apps.analytics.models import LOCAL_SOURCE, AnalyticsPayload
 from apps.analytics.registry import get_entry_by_type
+from apps.core.json_utils import to_jsonable
 
 logger = logging.getLogger(__name__)
-
-
-def _to_jsonable(raw_data: Any) -> Any:
-    """Convert a collector's ``gather()`` output to a JSON-serialisable structure.
-
-    Collectors return either a pandas DataFrame (most) or a plain dict (``config``). pandas
-    ``to_json`` handles numpy dtypes, NaN and timestamps natively — avoiding the numpy-int64 /
-    NaN pitfalls that ``DjangoJSONEncoder`` chokes on — so we round-trip DataFrames through it.
-
-    This is the minimal generic conversion; richer per-collector serialization can be added at
-    the API boundary later.
-    """
-    # Duck-type a DataFrame without importing pandas at module load.
-    to_json = getattr(raw_data, "to_json", None)
-    if callable(to_json) and hasattr(raw_data, "columns"):
-        import json
-
-        return json.loads(raw_data.to_json(orient="records", date_format="iso"))
-
-    if raw_data is None:
-        return {}
-
-    # Already dict/list-shaped (e.g. the config collector).
-    return raw_data
 
 
 def persist_analytics_payload(
@@ -75,7 +52,7 @@ def persist_analytics_payload(
         return
 
     try:
-        payload = _to_jsonable(raw_data)
+        payload = {} if raw_data is None else to_jsonable(raw_data)
         # collector_type is the internal task key (for example, ``main_host``)
         # entry.name is the full whitelist/API/storage name (for example, ``controller.main_host``)
         AnalyticsPayload.objects.create(
