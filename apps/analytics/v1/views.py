@@ -28,6 +28,7 @@ _ANALYTICS_ROW_FIELDS_DESCRIPTION = """The linked collector row endpoints return
 - `id`: unique stored collection row identifier.
 - `collector`: public `group.function` collector name.
 - `source`: originating platform component, normally `local`.
+- `cluster_id`: Controller installation UUID (`INSTALL_UUID`), or null if unavailable.
 - `since`: inclusive start bound passed to the collector, or null for an open bound or snapshot.
 - `until`: exclusive end bound passed to the collector, or null for an open bound or snapshot.
 - `started_at`: timestamp when collection started.

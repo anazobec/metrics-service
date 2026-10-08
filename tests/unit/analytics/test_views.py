@@ -15,10 +15,11 @@ UNIFIED = "controller.unified_jobs_dashboard"
 CONFIG = "controller.config"
 
 
-def _row(collector, since, until, payload=None):
+def _row(collector, since, until, payload=None, cluster_id=None):
     started = datetime(2026, 8, 17, 10, tzinfo=UTC)
     return AnalyticsPayload.objects.create(
         collector=collector,
+        cluster_id=cluster_id,
         since=since,
         until=until,
         started_at=started,
@@ -114,7 +115,13 @@ def test_rows_unknown_collector_404(authenticated_client):
 
 
 def test_rows_return_collection_envelope(authenticated_client):
-    _row(UNIFIED, datetime(2026, 8, 17, 10, tzinfo=UTC), datetime(2026, 8, 17, 11, tzinfo=UTC), {"v": 1})
+    _row(
+        UNIFIED,
+        datetime(2026, 8, 17, 10, tzinfo=UTC),
+        datetime(2026, 8, 17, 11, tzinfo=UTC),
+        {"v": 1},
+        cluster_id="2aebf27a-42ee-4e15-93d0-8bd5f9b52219",
+    )
 
     response = authenticated_client.get(f"{ROOT}{UNIFIED}/")
 
@@ -122,6 +129,7 @@ def test_rows_return_collection_envelope(authenticated_client):
     result = response.json()["results"][0]
     assert result["collector"] == UNIFIED
     assert result["source"] == "local"
+    assert result["cluster_id"] == "2aebf27a-42ee-4e15-93d0-8bd5f9b52219"
     assert result["payload"] == {"v": 1}
     assert "started_at" in result
     assert "finished_at" in result

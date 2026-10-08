@@ -12,6 +12,7 @@ analytics apps.
 from __future__ import annotations
 
 import datetime
+import json
 import logging
 from typing import Any
 
@@ -20,6 +21,35 @@ from apps.analytics.registry import get_entry_by_type
 from apps.core.json_utils import to_jsonable
 
 logger = logging.getLogger(__name__)
+
+
+def _get_cluster_id(db_connection: Any) -> str | None:
+    """Read Controller's stable installation UUID from ``conf_setting``.
+
+    AWX stores setting values as JSON-encoded text. Missing settings and database
+    lookup errors are non-fatal: payloads are still persisted with a null cluster ID.
+    """
+    if db_connection is None:
+        return None
+
+    try:
+        with db_connection.cursor() as cursor:
+            cursor.execute("SELECT value FROM conf_setting WHERE key = %s", ["INSTALL_UUID"])
+            row = cursor.fetchone()
+        if not row or not row[0]:
+            return None
+
+        value = row[0]
+        if not isinstance(value, str):
+            return None
+        try:
+            decoded = json.loads(value)
+        except (TypeError, ValueError):
+            decoded = value
+        return decoded if isinstance(decoded, str) and decoded else None
+    except Exception:  # noqa: BLE001 - metadata lookup must not block collection persistence
+        logger.warning("Failed to read Controller INSTALL_UUID from AWX database", exc_info=True)
+        return None
 
 
 def persist_analytics_payload(
@@ -32,6 +62,7 @@ def persist_analytics_payload(
     finished_at: datetime.datetime,
     source: str = LOCAL_SOURCE,
     raise_on_error: bool = False,
+    db_connection: Any = None,
 ) -> None:
     """Persist raw ``gather()`` output for an enabled collector, keyed by public name.
 
@@ -56,11 +87,13 @@ def persist_analytics_payload(
 
     try:
         payload = {} if raw_data is None else to_jsonable(raw_data)
+        cluster_id = _get_cluster_id(db_connection)
         # collector_type is the internal task key (for example, ``main_host``)
         # entry.name is the full whitelist/API/storage name (for example, ``controller.main_host``)
         AnalyticsPayload.objects.create(
             collector=entry.name,
             source=source,
+            cluster_id=cluster_id,
             since=since,
             until=until,
             payload=payload,

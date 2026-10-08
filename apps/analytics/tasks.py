@@ -110,6 +110,7 @@ def collect_analytics_on_demand(**kwargs) -> dict[str, Any]:
             started_at=started,
             finished_at=finished,
             raise_on_error=True,
+            db_connection=db_connection,
         )
     except Exception as e:
         logger.exception("On-demand analytics persistence failed for %s", collector)

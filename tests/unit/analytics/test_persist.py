@@ -50,6 +50,47 @@ def test_persist_nested_dict_converts_decimal_values():
     assert row.payload == {"instance-1": {"uuid": "instance-1", "cpu": "1.0"}}
 
 
+def test_persist_reads_install_uuid_as_cluster_id():
+    started, finished = _times()
+    db_connection = MagicMock()
+    cursor = db_connection.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value = ('"2aebf27a-42ee-4e15-93d0-8bd5f9b52219"',)
+
+    persist_analytics_payload(
+        "config",
+        {"version": "1.2.3"},
+        since=None,
+        until=None,
+        started_at=started,
+        finished_at=finished,
+        db_connection=db_connection,
+    )
+
+    row = AnalyticsPayload.objects.get(collector="controller.config")
+    assert row.cluster_id == "2aebf27a-42ee-4e15-93d0-8bd5f9b52219"
+    cursor.execute.assert_called_once_with("SELECT value FROM conf_setting WHERE key = %s", ["INSTALL_UUID"])
+
+
+def test_persist_when_install_uuid_lookup_fails_keeps_payload():
+    started, finished = _times()
+    db_connection = MagicMock()
+    db_connection.cursor.side_effect = RuntimeError("AWX unavailable")
+
+    persist_analytics_payload(
+        "config",
+        {"version": "1.2.3"},
+        since=None,
+        until=None,
+        started_at=started,
+        finished_at=finished,
+        db_connection=db_connection,
+    )
+
+    row = AnalyticsPayload.objects.get(collector="controller.config")
+    assert row.payload == {"version": "1.2.3"}
+    assert row.cluster_id is None
+
+
 def test_persist_none_becomes_empty_dict():
     started, finished = _times()
     persist_analytics_payload("config", None, since=None, until=None, started_at=started, finished_at=finished)
@@ -168,6 +209,7 @@ def test_generic_collection_passes_raw_data_to_persistence():
         started_at=ANY,
         finished_at=ANY,
         raise_on_error=False,
+        db_connection=ANY,
     )
 
 

@@ -2,7 +2,8 @@
 
 Analytics collection stores the raw output of enabled metrics-utility collectors
 in `AnalyticsPayload`. The stored row is a collection envelope: collector name,
-source, collection bounds, collection timestamps, and the raw JSON payload.
+source, Controller installation UUID, collection bounds, collection timestamps,
+and the raw JSON payload.
 
 The read and trigger APIs are available under `/api/v1/analytics/` and are
 restricted to users with the System Administrator or Platform Auditor role.
@@ -115,6 +116,7 @@ GET /api/v1/analytics/controller.unified_jobs_dashboard/
       "id": 42,
       "collector": "controller.unified_jobs_dashboard",
       "source": "local",
+      "cluster_id": "2aebf27a-42ee-4e15-93d0-8bd5f9b52219",
       "since": "2026-08-17T10:00:00Z",
       "until": "2026-08-17T11:00:00Z",
       "started_at": "2026-08-17T11:01:02Z",

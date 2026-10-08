@@ -52,6 +52,12 @@ class AnalyticsPayload(CommonModel, AuditableModel):
         default=LOCAL_SOURCE,
         help_text="Originating platform component, such as local, controller, eda, or hub.",
     )
+    cluster_id = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        help_text="Controller installation UUID (INSTALL_UUID) read from the AWX database, if available.",
+    )
 
     # Collection window as passed to the collector. Both nullable — some collectors
     # (snapshots such as config) do not accept a since/until window.

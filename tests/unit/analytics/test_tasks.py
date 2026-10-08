@@ -63,6 +63,10 @@ def test_on_demand_invalid_window_errors(kwargs, message):
 def test_on_demand_happy_path_persists(_mock_db):
     df = pd.DataFrame([{"id": 1}])
     func = _fake_collector(df)
+    db_connection = _mock_db.return_value
+    db_connection.cursor.return_value.__enter__.return_value.fetchone.return_value = (
+        '"2aebf27a-42ee-4e15-93d0-8bd5f9b52219"',
+    )
     with patch("apps.analytics.tasks._collector_func", return_value=func):
         result = collect_analytics_on_demand(
             collector=UNIFIED, since="2026-08-17T10:00:00Z", until="2026-08-17T11:00:00Z"
@@ -70,6 +74,7 @@ def test_on_demand_happy_path_persists(_mock_db):
     assert result["status"] == "success"
     row = AnalyticsPayload.objects.get(collector=UNIFIED)
     assert row.payload == [{"id": 1}]
+    assert row.cluster_id == "2aebf27a-42ee-4e15-93d0-8bd5f9b52219"
     # since/until are threaded through to the collector.
     _, kwargs = func.call_args
     assert kwargs["since"] is not None and kwargs["until"] is not None
@@ -108,6 +113,7 @@ def test_on_demand_persistence_failure_fails_task(_mock_db):
         started_at=ANY,
         finished_at=ANY,
         raise_on_error=True,
+        db_connection=ANY,
     )
 
 

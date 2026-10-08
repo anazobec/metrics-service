@@ -30,5 +30,5 @@ class AnalyticsPayloadSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AnalyticsPayload
-        fields = ["id", "collector", "source", "since", "until", "started_at", "finished_at", "payload"]
+        fields = ["id", "collector", "source", "cluster_id", "since", "until", "started_at", "finished_at", "payload"]
         read_only_fields = fields

@@ -431,6 +431,7 @@ paths:
         - `id`: unique stored collection row identifier.
         - `collector`: public `group.function` collector name.
         - `source`: originating platform component, normally `local`.
+        - `cluster_id`: Controller installation UUID (`INSTALL_UUID`), or null if unavailable.
         - `since`: inclusive start bound passed to the collector, or null for an open bound or snapshot.
         - `until`: exclusive end bound passed to the collector, or null for an open bound or snapshot.
         - `started_at`: timestamp when collection started.
@@ -7788,6 +7789,12 @@ components:
           readOnly: true
           description: Originating platform component, such as local, controller,
             eda, or hub.
+        cluster_id:
+          type: string
+          readOnly: true
+          nullable: true
+          description: Controller installation UUID (INSTALL_UUID) read from the AWX
+            database, if available.
         since:
           type: string
           format: date-time

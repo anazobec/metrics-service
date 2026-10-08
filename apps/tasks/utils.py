@@ -575,6 +575,7 @@ def generic_collect_metrics(
             started_at=gather_started,
             finished_at=gather_finished,
             raise_on_error=not config.get("persist_to_hourly", True),
+            db_connection=db_connection,
         )
 
         if post_collect_hook is not None:
