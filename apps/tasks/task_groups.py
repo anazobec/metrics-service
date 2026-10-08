@@ -24,7 +24,7 @@ SEGMENT_MAX_ATTEMPTS = 7  # Extended window for Segment transmission (~10.5h wit
 logger = logging.getLogger(__name__)
 
 
-def get_feature_enabled_from_db(setting_name: str, default: bool = False) -> bool:
+def get_feature_enabled_from_db(setting_name: str, default: bool = False, *, raise_errors: bool = False) -> bool:
     """
     Get a feature enabled value from database settings.
 
@@ -39,6 +39,8 @@ def get_feature_enabled_from_db(setting_name: str, default: bool = False) -> boo
     Args:
         setting_name: Name of the feature enabled setting
         default: Default value if not found in database
+        raise_errors: Propagate read failures instead of returning a fallback.
+            Telemetry uses this to distinguish an unavailable state from a default.
 
     Returns:
         bool: Feature enabled value from database or default
@@ -75,11 +77,15 @@ def get_feature_enabled_from_db(setting_name: str, default: bool = False) -> boo
             if flag is not None:
                 return flag.value.lower() in ("true", "1", "yes", "on")
         except Exception as e:
+            if raise_errors:
+                raise
             logger.warning(f"Error reading feature enabled setting {setting_name} from AAPFlag: {e}")
 
         return default
 
     except Exception as e:
+        if raise_errors:
+            raise
         logger.warning(f"Error reading feature enabled setting {setting_name} from database: {e}")
         feature_enabled = getattr(settings, "FEATURE", {})
         return bool(feature_enabled[setting_name]) if setting_name in feature_enabled else default

@@ -47,6 +47,7 @@ still run under `METRICS_COLLECTION`.
 2. Calls `metrics_utility.anonymized_rollups.anonymize_rollups()` on merged collector rollups.
 3. Adds `summary_metadata` (`install_type`, collection counts, missing hours).
 4. Embeds `dashboard_telemetry` from rollup metrics (collection performance, not raw jobs).
+   Adds a current `leaderboard_telemetry` settings observation (see below).
 5. Creates `AnonymizedMetricsPayload` with `status="pending"`.
 6. Sets summary `status="anonymized"`.
 7. Creates a **scheduled** `send_anonymized_to_segment` task with random jitter
@@ -54,6 +55,53 @@ still run under `METRICS_COLLECTION`.
 
 Uses advisory locking and `max_attempts=7` (`SEGMENT_MAX_ATTEMPTS` in
 `task_groups.py`) for the anonymize task itself.
+
+### Leaderboard enablement observation
+
+The daily payload includes a `leaderboard_telemetry` object. It records the
+effective `SHOW_LEADERBOARD` setting at payload preparation time, including
+explicitly disabled deployments. It uses the same precedence and default
+(`true`) as the Leaderboard API. An absent database setting therefore does
+not imply a disabled or unknown state.
+
+```json
+{
+  "leaderboard_telemetry": {
+    "enabled": false,
+    "observed_at": "2026-10-08T03:00:00+00:00"
+  }
+}
+```
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `enabled` | boolean or null | Effective enablement; `null` means a configuration read failed. |
+| `observed_at` | ISO 8601 timestamp with timezone | Time the settings read began, distinct from the metrics `summary_date`. |
+
+Enabled and unavailable observations use the same shape with `enabled: true`
+and `enabled: null`, respectively. Deployments running older code may omit the
+whole object; downstream reporting must distinguish that absence from `false`.
+The observation describes configuration adoption and contains no user details,
+organization names, or Leaderboard scores.
+
+Capture is part of daily anonymization, independent of `SHOW_LEADERBOARD` and
+`DASHBOARD_COLLECTION`. It requires an aggregated daily summary and follows
+the existing telemetry cadence and `ANONYMIZED_DATA_COLLECTION` controls.
+Changes appear in the next successfully prepared and delivered payload. The
+saved observation is reused on delivery retries, even if the setting changes
+before the retry. This does not reconstruct historical settings for a past
+summary date or record every change between daily observations.
+
+The existing `Controller Metrics Daily Rollup` event carries the object under
+Segment's `properties.data.leaderboard_telemetry`. Metrics Utility splits the
+payload into chunks, so other metadata can arrive in separate chunks.
+
+Field naming and downstream destination mappings need Analytics review.
+Amplitude/Dataverse ingestion and reporting have not been validated by this
+backend change. The existing daily sender generates a per-payload Segment
+user ID; it does not establish a stable deployment identity for adoption
+counts. Deployment identity, supported-version eligibility, and reporting
+definitions remain follow-up work for AAP-88680.
 
 ### What is anonymized
 

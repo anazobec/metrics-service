@@ -108,6 +108,13 @@ class TestFeatureEnabledDB(TestCase):
             assert result is True
             mock_logger.warning.assert_called_once()
 
+    def test_read_errors_can_be_propagated(self):
+        with (
+            patch("apps.dynamic_settings.models.Setting.objects.filter", side_effect=RuntimeError("DB Error")),
+            pytest.raises(RuntimeError, match="DB Error"),
+        ):
+            get_feature_enabled_from_db("SHOW_LEADERBOARD", default=True, raise_errors=True)
+
 
 class TestFeatureEnabledAAPFlagFallback(TestCase):
     """Test AAPFlag fallback in get_feature_enabled_from_db.
@@ -124,6 +131,14 @@ class TestFeatureEnabledAAPFlagFallback(TestCase):
         flag = MagicMock()
         flag.value = value
         return flag
+
+    @override_settings(FEATURE={})
+    def test_platform_read_errors_can_be_propagated(self):
+        with (
+            patch("ansible_base.feature_flags.models.AAPFlag.objects.filter", side_effect=RuntimeError("DB Error")),
+            pytest.raises(RuntimeError, match="DB Error"),
+        ):
+            get_feature_enabled_from_db("SHOW_LEADERBOARD", default=True, raise_errors=True)
 
     def _patch_aap_flag(self, flag_instance):
         """Patch AAPFlag at its source module so the local import inside the function picks it up."""

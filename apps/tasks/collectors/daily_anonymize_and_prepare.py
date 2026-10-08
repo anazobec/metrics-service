@@ -16,7 +16,7 @@ from typing import Any
 from django.conf import settings
 from django.utils import timezone
 
-from ..task_groups import SEGMENT_MAX_ATTEMPTS
+from ..task_groups import SEGMENT_MAX_ATTEMPTS, get_feature_enabled_from_db
 from ..utils import create_task_result, generate_salt, log_task_execution
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,18 @@ logger = logging.getLogger(__name__)
 def random_offset():
     """Return a random jitter offset in minutes for scheduling."""
     return random.randint(1, 240)  # noqa: S311
+
+
+def _collect_leaderboard_telemetry() -> dict[str, Any]:
+    """Observe the current effective setting, independently of the summary date."""
+    observed_at = timezone.now().isoformat()
+    try:
+        enabled = get_feature_enabled_from_db("SHOW_LEADERBOARD", default=True, raise_errors=True)
+    except Exception:
+        logger.exception("Failed to read Leaderboard enablement for telemetry")
+        enabled = None
+
+    return {"enabled": enabled, "observed_at": observed_at}
 
 
 def daily_anonymize_and_prepare(**kwargs) -> dict[str, Any]:
@@ -96,6 +108,7 @@ def daily_anonymize_and_prepare(**kwargs) -> dict[str, Any]:
 
         # Get dashboard telemetry
         anonymized_data["dashboard_telemetry"] = metrics.get("dashboard_telemetry", [])
+        anonymized_data["leaderboard_telemetry"] = _collect_leaderboard_telemetry()
 
         offset_minutes = random_offset()
         send_scheduled_time = timezone.now() + timedelta(minutes=offset_minutes)
