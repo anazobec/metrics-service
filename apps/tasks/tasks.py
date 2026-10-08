@@ -209,8 +209,8 @@ TASK_METADATA = {
             },
             "analytics_retention_days": {
                 "type": "integer",
-                "default": 90,
-                "description": "Number of days to retain analytics payloads",
+                "default": None,
+                "description": "Explicit override; otherwise use the Controller cleanup_jobs schedule or 90 days",
                 "min": 1,
                 "max": 3650,
             },

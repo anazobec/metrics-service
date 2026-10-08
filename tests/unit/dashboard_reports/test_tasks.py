@@ -868,6 +868,15 @@ class TestGetRetentionDays:
         mock_fetch.return_value = ([self._row(retention_days=None)], 1)
         assert get_retention_days() == DEFAULT_RETENTION_DAYS
 
+    @patch("apps.dashboard_reports.tasks.logger")
+    @patch("apps.dashboard_reports.tasks.fetch_retention_settings")
+    @patch("apps.dashboard_reports.tasks.get_db_connection")
+    def test_non_positive_retention_days_are_skipped(self, mock_conn, mock_fetch, mock_logger):
+        """Zero and negative schedules are ignored when a valid schedule exists."""
+        mock_fetch.return_value = ([self._row(retention_days=0), self._row(retention_days=45)], 2)
+        assert get_retention_days() == 45
+        mock_logger.warning.assert_not_called()
+
     @patch("apps.dashboard_reports.tasks.fetch_retention_settings")
     @patch("apps.dashboard_reports.tasks.get_db_connection")
     def test_single_active_schedule(self, mock_conn, mock_fetch):

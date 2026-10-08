@@ -119,6 +119,7 @@ python manage.py metrics_service init-system-tasks
 | [dashboard-sync.md](dashboard-sync.md) | Dashboard data collection: backfill and hourly hooks |
 | [dashboard-reports-api.md](dashboard-reports-api.md) | Automation-reports REST API for dashboard UI |
 | [analytics.md](analytics.md) | Raw analytics collectors, task examples, and read API |
+| [analytics-retention.md](analytics-retention.md) | Controller-aligned analytics payload retention and fallback rules |
 | [ingress.md](ingress.md) | Non-local analytics payload ingress and source semantics |
 | [data-models.md](data-models.md) | Entity relationships across tasks, metrics, and dashboard models |
 

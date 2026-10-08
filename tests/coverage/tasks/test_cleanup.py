@@ -259,6 +259,37 @@ def test_cleanup_metrics_data_dry_run_keeps_old_analytics_payload():
     assert AnalyticsPayload.objects.filter(pk=row.pk).exists()
 
 
+@pytest.mark.unit
+@pytest.mark.django_db
+def test_cleanup_metrics_data_uses_controller_retention_when_not_overridden():
+    from apps.analytics.models import AnalyticsPayload
+    from apps.tasks.cleanup.cleanup_metrics_data import cleanup_metrics_data
+
+    now = timezone.now()
+    row = AnalyticsPayload.objects.create(collector="controller.config", started_at=now, finished_at=now, payload={})
+    AnalyticsPayload.objects.filter(pk=row.pk).update(created=now - timedelta(days=60))
+
+    with patch(
+        "apps.tasks.cleanup.cleanup_metrics_data.get_controller_retention_days", return_value=30
+    ) as mock_retention:
+        result = cleanup_metrics_data()
+
+    mock_retention.assert_called_once_with("awx")
+    assert result["status"] == "success"
+    assert result["retention_policies"]["analytics_days"] == 30
+    assert not AnalyticsPayload.objects.filter(pk=row.pk).exists()
+
+
+@pytest.mark.unit
+def test_cleanup_metrics_data_rejects_non_positive_analytics_override():
+    from apps.tasks.cleanup.cleanup_metrics_data import cleanup_metrics_data
+
+    result = cleanup_metrics_data(analytics_retention_days=0)
+
+    assert result["status"] == "error"
+    assert "analytics_retention_days must be > 0" in result["error"]
+
+
 # ---------------------------------------------------------------------------
 # cleanup_activitystream
 # ---------------------------------------------------------------------------

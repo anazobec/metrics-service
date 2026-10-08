@@ -175,7 +175,9 @@ step, not registered as a recurring system task.
 ### Cleanup (`cleanup_metrics_data`)
 
 Daily at 04:00. Removes old hourly collections, daily summaries, and payloads
-based on retention settings in task args.
+based on retention settings in task args. Analytics payloads use the
+Controller `cleanup_jobs` retention schedule unless an explicit manual override
+is supplied. See [analytics-retention.md](analytics-retention.md).
 
 ## Data Models
 

@@ -5,7 +5,7 @@ Retention policies:
 - Hourly collections: 7 days
 - Daily summaries: 30 days
 - Anonymized payloads: 30 days (or 7 days after sent)
-- Analytics payloads: 90 days
+- Analytics payloads: Controller cleanup_jobs retention, falling back to 90 days
 """
 
 import logging
@@ -14,6 +14,7 @@ from typing import Any
 
 from django.utils import timezone
 
+from ..retention import DEFAULT_AWX_DB_NAME, get_controller_retention_days
 from ..utils import create_task_result, log_task_execution
 
 logger = logging.getLogger(__name__)
@@ -27,14 +28,16 @@ def cleanup_metrics_data(**kwargs) -> dict[str, Any]:
     - Hourly collections: 7 days
     - Daily summaries: 30 days
     - Anonymized payloads: 30 days (or 7 days after sent)
-    - Analytics payloads: 90 days
+    - Analytics payloads: Controller cleanup_jobs retention, falling back to 90 days
 
     Args:
         **kwargs: Task data containing:
             - hourly_retention_days (int): Days to keep hourly data (default: 7)
             - daily_retention_days (int): Days to keep daily summaries (default: 30)
             - payload_retention_days (int): Days to keep sent payloads (default: 7)
-            - analytics_retention_days (int): Days to keep analytics payloads (default: 90)
+            - analytics_retention_days (int): Explicit analytics retention override for manual runs.
+              When omitted, use the Controller cleanup_jobs schedule or 90 days if unavailable.
+            - awx_database (str): Controller database alias (default: awx)
             - dry_run (bool): If true, only count without deleting (default: False)
 
     Returns:
@@ -46,7 +49,20 @@ def cleanup_metrics_data(**kwargs) -> dict[str, Any]:
     hourly_retention_days = kwargs.get("hourly_retention_days", 7)
     daily_retention_days = kwargs.get("daily_retention_days", 30)
     payload_retention_days = kwargs.get("payload_retention_days", 7)
-    analytics_retention_days = kwargs.get("analytics_retention_days", 90)
+    analytics_retention_days = kwargs.get("analytics_retention_days")
+    if analytics_retention_days is None:
+        analytics_retention_days = get_controller_retention_days(kwargs.get("awx_database", DEFAULT_AWX_DB_NAME))
+    else:
+        try:
+            analytics_retention_days = int(analytics_retention_days)
+        except (TypeError, ValueError):
+            return create_task_result(
+                "error", error=f"Invalid analytics_retention_days value: {analytics_retention_days!r}"
+            )
+        if analytics_retention_days < 1:
+            return create_task_result(
+                "error", error=f"analytics_retention_days must be > 0, got {analytics_retention_days!r}"
+            )
     dry_run = kwargs.get("dry_run", False)
 
     log_task_execution("cleanup_metrics_data", "processing", f"Cleaning up metrics data (dry_run={dry_run})")
@@ -98,7 +114,7 @@ def cleanup_metrics_data(**kwargs) -> dict[str, Any]:
             results["anonymized_payloads"]["deleted"] = sent_deleted + unsent_deleted
 
         # Cleanup analytics payloads (BYO-BI raw collector output) older than retention period.
-        # Keyed on `created` (row age), not `finished_at`, which may be null for incomplete rows.
+        # Keyed on `created` (row age), not `finished_at` (collection completion time).
         analytics_cutoff = now - timedelta(days=analytics_retention_days)
         old_analytics = AnalyticsPayload.objects.filter(created__lt=analytics_cutoff)
         results["analytics_payloads"]["found"] = old_analytics.count()

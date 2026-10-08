@@ -9,6 +9,8 @@ import enum
 import logging
 from typing import Any
 
+from apps.tasks.retention import RETENTION_SETTINGS_QUERY
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,22 +37,7 @@ class AWXQuery(enum.Enum):
         "JOIN main_organization o ON o.id = l.organization_id"
     )
 
-    RETENTION_SETTINGS = (
-        "SELECT "
-        "sjt.job_type, "
-        "ujt.name AS template_name, "
-        "s.name AS schedule_name, "
-        "s.enabled AS schedule_enabled, "
-        "s.rrule, "
-        "s.next_run, "
-        "(s.extra_data::jsonb ->> 'days')::int AS retention_days "
-        "FROM main_systemjobtemplate sjt "
-        "JOIN main_unifiedjobtemplate ujt "
-        "ON ujt.id = sjt.unifiedjobtemplate_ptr_id "
-        "LEFT JOIN main_schedule s "
-        "ON s.unified_job_template_id = ujt.id "
-        "WHERE sjt.job_type IN ('cleanup_jobs', 'cleanup_activitystream')"
-    )
+    RETENTION_SETTINGS = RETENTION_SETTINGS_QUERY
 
 
 def _build_where_clause(join_alias: str, search_str: str | None, pk: Any) -> tuple[str, list[Any]]:

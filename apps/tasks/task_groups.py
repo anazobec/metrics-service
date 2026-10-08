@@ -293,6 +293,7 @@ METRICS_COLLECTION_GROUP = TaskGroup(
                 "hourly_retention_days": 7,
                 "daily_retention_days": 30,
                 "payload_retention_days": 7,
+                # Analytics retention is resolved from the Controller cleanup_jobs schedule at run time.
             },
             "enabled": True,
             "description": "Clean up old metrics data based on retention policies",
