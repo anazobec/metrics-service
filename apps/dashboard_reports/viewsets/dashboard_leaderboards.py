@@ -90,29 +90,30 @@ def _user_achievements(
 _ORG_ACHIEVEMENTS: tuple[str, ...] = ("sustained", "rising", "top_tier")
 
 
-def _org_achievements(org_streak: dict[str, Any], org_rank: int | None) -> list[str]:
-    """Return the achievement ids the org_streak organization has earned.
+def _org_achievements(member_dailies: list[list[dict[str, Any]]], org_rank: int | None) -> list[str]:
+    """Return the achievement ids earned by any of the user's member organizations.
 
-    Derived from the org's ``daily`` successful-run series (already computed
-    for ``org_streak``) plus its current leaderboard rank.
+    ``member_dailies`` holds one zero-filled ``daily`` successful-run series per
+    member organization. Every member org is evaluated, not only the busiest one,
+    so a quieter org's badges still show up — and users with the same memberships
+    always get the same list. ``org_rank`` is the busiest member org's rank, which
+    is also the best rank among the user's orgs.
     """
-    if not org_streak["organization"]:
-        return []
-
-    daily = org_streak["daily"]
-    half = len(daily) // 2
-
-    active_days = {entry["date"] for entry in daily if entry["successful_runs"] > 0}
-    earned = {
+    earned: set[str] = set()
+    for daily in member_dailies:
+        half = len(daily) // 2
+        active_days = {entry["date"] for entry in daily if entry["successful_runs"] > 0}
         # 14+ consecutive UTC calendar days with a successful run in the window.
-        "sustained": _max_consecutive_days(active_days) >= 14,
+        if _max_consecutive_days(active_days) >= 14:
+            earned.add("sustained")
         # More successful runs in the second half of the window than the first.
-        "rising": sum(e["successful_runs"] for e in daily[half:]) > sum(e["successful_runs"] for e in daily[:half]),
-        # Sync-point rank history is not stored, so use the current standing:
-        # ranked in the top 3 of the org leaderboard.
-        "top_tier": org_rank is not None and org_rank <= 3,
-    }
-    return [achievement for achievement in _ORG_ACHIEVEMENTS if earned[achievement]]
+        if sum(e["successful_runs"] for e in daily[half:]) > sum(e["successful_runs"] for e in daily[:half]):
+            earned.add("rising")
+    # Sync-point rank history is not stored, so use the current standing:
+    # ranked in the top 3 of the org leaderboard.
+    if org_rank is not None and org_rank <= 3:
+        earned.add("top_tier")
+    return [achievement for achievement in _ORG_ACHIEVEMENTS if achievement in earned]
 
 
 # Job statuses that represent a finished run with a definitive outcome. Anything
@@ -266,13 +267,17 @@ def _member_org_names(user: User) -> set[str]:
 
 def _build_organization_stats(
     day_org_rows: list[dict[str, Any]], window_dates: list[date], member_org_names: set[str]
-) -> tuple[dict[str, Any], dict[str, Any], int | None]:
-    """Build the organization streak, leaderboard, and current-organization rank.
+) -> tuple[dict[str, Any], dict[str, Any], int | None, list[list[dict[str, Any]]]]:
+    """Build the organization streak, leaderboard, current-organization rank and member-org series.
 
     ``org_streak`` is scoped to the user's busiest organization (most successful
     runs in the window) among ``member_org_names``. When the user has no
     organizations — or none of them ran anything in the window — the streak has
     no organization and every day is zero.
+
+    The last value holds a zero-filled ``daily`` series for every member
+    organization with a known name, regardless of rank (not only the visible
+    top 10), for ``_org_achievements``.
     """
     # Per-organization successful-run totals for the leaderboard and the
     # user's org streak — an in-memory rollup of day_org_rows by org id.
@@ -282,9 +287,18 @@ def _build_organization_stats(
         if org_id is None:
             continue
         agg = org_totals.setdefault(
-            org_id, {"organization_id": org_id, "runs": 0, "names": set(), "latest": None, "organization_name": None}
+            org_id,
+            {
+                "organization_id": org_id,
+                "runs": 0,
+                "by_day": defaultdict(int),
+                "names": set(),
+                "latest": None,
+                "organization_name": None,
+            },
         )
         agg["runs"] += row["runs"]
+        agg["by_day"][row["day"]] += row["runs"]
         if row["organization_name"] is None:
             continue  # name not synced (e.g. org deleted in AWX); runs still count toward the org's total
         agg["names"].add(row["organization_name"])
@@ -311,11 +325,7 @@ def _build_organization_stats(
     # org_rows is already sorted, so the first member org is the user's busiest.
     user_org = next((row for row in org_rows if row["user_organization"]), None)
 
-    user_org_by_day: dict[date, int] = defaultdict(int)
-    if user_org:
-        for row in day_org_rows:
-            if row["organization_id"] == user_org["organization_id"]:
-                user_org_by_day[row["day"]] += row["runs"]
+    user_org_by_day: dict[date, int] = user_org["by_day"] if user_org else {}
     org_streak: dict[str, Any] = {
         "organization": (
             {
@@ -346,7 +356,16 @@ def _build_organization_stats(
             for rank, row in enumerate(org_rows[:10], start=1)
         ],
     }
-    return org_streak, organization_leaderboard, user_organization_rank
+    # Achievements look at every member org; org_streak only at the busiest one,
+    # whose series is reused as-is.
+    member_dailies = [
+        org_streak["daily"]
+        if row is user_org
+        else [{"date": day, "successful_runs": row["by_day"].get(day, 0)} for day in window_dates]
+        for row in org_rows
+        if row["user_organization"]
+    ]
+    return org_streak, organization_leaderboard, user_organization_rank, member_dailies
 
 
 def _build_activity_levels(
@@ -479,12 +498,12 @@ class DashboardLeaderboardsViewSet(ReadOnlyModelViewSet):
             enterprise_by_day[row["day"]] += row["runs"]
         stats["enterprise_streak"] = _streak_series(enterprise_by_day, window_dates)
 
-        org_streak, organization_leaderboard, user_organization_rank = _build_organization_stats(
+        org_streak, organization_leaderboard, user_organization_rank, member_dailies = _build_organization_stats(
             day_org_rows, window_dates, _member_org_names(request.user)
         )
         stats["org_streak"] = org_streak
         stats["organization_leaderboard"] = organization_leaderboard
-        stats["org_achievements"] = _org_achievements(org_streak, user_organization_rank)
+        stats["org_achievements"] = _org_achievements(member_dailies, user_organization_rank)
 
         # The local User pk is not the AWX user id (this deployment uses DAB's
         # resource registry, i.e. a separate User table per service), so it

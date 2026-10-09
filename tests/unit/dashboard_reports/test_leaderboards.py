@@ -463,12 +463,35 @@ class TestActivityLevels:
 
 class TestUserAchievements:
     def test_empty_without_successful_runs(self, authenticated_client, user):
+        """No successful runs in the window means no user achievements."""
         make_job(day(1), status=JobStatusChoices.FAILED, **_me(user))
         assert get(authenticated_client)["user_achievements"] == []
 
     def test_ignition_on_first_successful_run(self, authenticated_client, user):
+        """A single successful run earns ``ignition``."""
         make_job(day(1), **_me(user))
         assert "ignition" in get(authenticated_client)["user_achievements"]
+
+    def test_achievements_for_user_outside_top_10(self, authenticated_client, user):
+        """A user ranked below every visible top 10 still earns their achievements."""
+        for other_id in range(1001, 1012):  # 11 busier users: 8 runs/day on 8 days, 8 templates
+            for offset in range(8):
+                for template_id in range(8):
+                    make_job(
+                        day(20 + offset),
+                        template_id=template_id,
+                        launched_by_id=other_id,
+                        launched_by_username=f"user{other_id}",
+                    )
+        for offset in range(7):  # me: one run on 7 consecutive days (7 runs total), first half
+            make_job(day(offset), **_me(user))
+
+        data = get(authenticated_client)
+        for level in data["activity_levels"]:
+            assert level["current_user_rank"] == 12
+            assert len(level["leaderboard"]) == 10
+            assert not any(row.get("is_current_user") for row in level["leaderboard"])
+        assert data["user_achievements"] == ["ignition", "week_warrior"]
 
     def test_achievements_follow_launched_by_id_across_rename(self, authenticated_client, user):
         # Username changed mid-window; the whole history must still count because
@@ -581,14 +604,17 @@ class TestOrgAchievements:
         member_of("Org One")
 
     def test_empty_without_org_data(self, authenticated_client):
+        """Runs without an organization earn no org achievements."""
         make_job(day(1), org_id=None, org_name=None)
         assert get(authenticated_client)["org_achievements"] == []
 
     def test_top_tier_when_org_ranked_top_3(self, authenticated_client):
+        """A member org ranked in the top 3 earns ``top_tier``."""
         make_job(day(1), org_id=1, org_name="Org One")
         assert "top_tier" in get(authenticated_client)["org_achievements"]
 
     def test_sustained_needs_14_consecutive_days(self, authenticated_client):
+        """``sustained`` needs 14 consecutive active days; 13 are not enough."""
         for offset in range(13):
             make_job(day(offset), org_id=1, org_name="Org One")
         assert "sustained" not in get(authenticated_client)["org_achievements"]
@@ -597,16 +623,63 @@ class TestOrgAchievements:
         assert "sustained" in get(authenticated_client)["org_achievements"]
 
     def test_rising_when_second_half_busier(self, authenticated_client):
+        """More runs in the second half of the window than the first earns ``rising``."""
         make_job(day(1), org_id=1, org_name="Org One")
         make_job(day(20), org_id=1, org_name="Org One")
         make_job(day(21), org_id=1, org_name="Org One")
         assert "rising" in get(authenticated_client)["org_achievements"]
 
     def test_no_rising_when_first_half_busier(self, authenticated_client):
+        """A front-loaded window does not earn ``rising``."""
         make_job(day(1), org_id=1, org_name="Org One")
         make_job(day(2), org_id=1, org_name="Org One")
         make_job(day(20), org_id=1, org_name="Org One")
         assert "rising" not in get(authenticated_client)["org_achievements"]
+
+    def test_achievements_for_member_org_outside_top_10(self, authenticated_client, member_of):
+        """A member org ranked below the visible top 10 still earns its achievements."""
+        member_of("Quiet")
+        for org_id in range(1, 12):  # 11 busier orgs: 15 runs each on the last day
+            for _ in range(15):
+                make_job(day(29), org_id=org_id, org_name=f"Busy {org_id:02d}")
+        for offset in range(14):  # Quiet: one run on 14 consecutive days (14 runs total)
+            make_job(day(offset), org_id=100, org_name="Quiet")
+
+        data = get(authenticated_client)
+        board = data["organization_leaderboard"]
+        assert board["user_organization_rank"] == 12
+        assert len(board["leaderboard"]) == 10
+        assert "Quiet" not in {row["name"] for row in board["leaderboard"]}
+        assert data["org_streak"]["organization"] == {"id": 100, "name": "Quiet", "run_count": 14}
+        assert data["org_achievements"] == ["sustained"]
+
+    def test_quieter_member_org_achievements_included(self, authenticated_client, member_of):
+        """Badges earned by a member org that is not the user's busiest still count."""
+        member_of("Busy", "Quiet")
+        for offset in (0, 1, 2):  # Busy: 200 runs on three days, first half only
+            for _ in range(67 if offset < 2 else 66):
+                make_job(day(offset), org_id=1, org_name="Busy")
+        for offset in range(14):  # Quiet: one run on 14 consecutive days
+            make_job(day(offset), org_id=2, org_name="Quiet")
+
+        data = get(authenticated_client)
+        assert data["org_streak"]["organization"]["name"] == "Busy"
+        assert data["org_achievements"] == ["sustained", "top_tier"]
+
+    def test_org_achievements_same_for_users_with_same_memberships(self, api_client, user, member_of):
+        """Org achievements depend only on memberships, not on who is viewing."""
+        member_of("Org One", "Org Two")
+        other = User.objects.create_user(username="other", password="x")  # noqa: S106
+        for offset in range(14):
+            make_job(day(offset), org_id=1, org_name="Org One", launched_by_id=user.id, launched_by_username="testuser")
+        make_job(day(25), org_id=2, org_name="Org Two", launched_by_id=other.id, launched_by_username="other")
+
+        results = []
+        for viewer in (user, other):
+            api_client.force_authenticate(user=viewer)
+            results.append(get(api_client))
+        assert results[0]["org_achievements"] == results[1]["org_achievements"] == ["sustained", "rising", "top_tier"]
+        assert results[0]["user_achievements"] != results[1]["user_achievements"]
 
 
 class TestEdgeCases:
