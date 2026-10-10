@@ -351,10 +351,10 @@ def run_dashboard_collection_benchmark() -> None:
     increment_hours = int(os.environ.get("INCREMENT_HOURS", "6"))
     increment_count = int(os.environ.get("INCREMENT_COUNT", "4"))
 
-    until_str = os.environ.get("TEST_UNTIL", "2024-03-31")
+    until_str = os.environ.get("TEST_UNTIL", "2026-10-10")
     until = datetime.fromisoformat(until_str).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=UTC)
 
-    since_str = os.environ.get("TEST_SINCE", "2024-01-01")
+    since_str = os.environ.get("TEST_SINCE", "2026-07-12")
     since = datetime.fromisoformat(since_str).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=UTC)
 
     # Start of the incremental phase — defaults to TEST_UNTIL (last day of the backfill).

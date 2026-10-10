@@ -90,10 +90,10 @@ METRICS_URL = os.environ.get("METRICS_URL", "")
 DB_NAME = os.environ.get("DB_NAME", "awx")
 DIRECT_DB = os.environ.get("DIRECT_DB", "false").lower() == "true"
 
-until_str = os.environ.get("TEST_UNTIL", "2024-03-31")
+until_str = os.environ.get("TEST_UNTIL", "2026-10-10")
 until = datetime.fromisoformat(until_str).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=UTC)
 
-since_str = os.environ.get("TEST_SINCE", "2024-01-01")
+since_str = os.environ.get("TEST_SINCE", "2026-07-12")
 since = datetime.fromisoformat(since_str).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=UTC)
 
 # Derived phase windows

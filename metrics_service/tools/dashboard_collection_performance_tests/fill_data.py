@@ -72,10 +72,10 @@ def main() -> None:  # noqa: PLR0915
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--period-start", default="2024-01-01", metavar="YYYY-MM-DD", help="First day to fill (default: 2024-01-01)"
+        "--period-start", default="2026-07-12", metavar="YYYY-MM-DD", help="First day to fill (default: 2024-01-01)"
     )
     parser.add_argument(
-        "--period-end", default="2024-03-31", metavar="YYYY-MM-DD", help="Last day to fill (default: 2024-03-31)"
+        "--period-end", default="2026-10-10", metavar="YYYY-MM-DD", help="Last day to fill (default: 2024-03-31)"
     )
     parser.add_argument(
         "--scale",
