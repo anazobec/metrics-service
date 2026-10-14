@@ -255,6 +255,9 @@ TASK_METADATA = {
             {"name": "Unified jobs", "data": {"collector_type": "unified_jobs"}},
             {"name": "Credentials", "data": {"collector_type": "credentials_service"}},
             {"name": "Job events", "data": {"collector_type": "main_jobevent_service"}},
+            {"name": "Raw job host summary records", "data": {"collector_type": "job_host_summary"}},
+            {"name": "Base unified job records", "data": {"collector_type": "unified_jobs_base"}},
+            {"name": "Legacy job events", "data": {"collector_type": "main_jobevent_legacy"}},
             {
                 "name": "Specific hour",
                 "data": {"collector_type": "job_host_summary_service", "hour_timestamp": "2024-01-01T00:00:00Z"},
