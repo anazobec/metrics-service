@@ -11856,6 +11856,10 @@
                         "nullable": true,
                         "description": "Rank of the current user (None if they have no runs)"
                     },
+                    "current_user_runs": {
+                        "type": "integer",
+                        "description": "Current user's value of this activity level's metric (0 if they have no runs)"
+                    },
                     "total_users": {
                         "type": "integer",
                         "description": "Users the rank is out of"
@@ -11869,6 +11873,7 @@
                 },
                 "required": [
                     "current_user_rank",
+                    "current_user_runs",
                     "id",
                     "leaderboard",
                     "total_users"

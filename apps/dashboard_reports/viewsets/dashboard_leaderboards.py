@@ -180,15 +180,17 @@ def _activity_level(
     already sorted by this activity level's metric descending, ties broken by
     display name, then id.
     Returns the top 10, the current user's rank (``None`` when they have no
-    successful runs in the window) and ``total_users`` (the pool the rank is
-    out of, i.e. "rank N of X").
+    successful runs in the window), their metric value (``0`` in that case) and
+    ``total_users`` (the pool the rank is out of, i.e. "rank N of X").
     """
     leaderboard: list[dict[str, Any]] = []
     current_user_rank: int | None = None
+    current_user_runs = 0
     for rank, row in enumerate(ranked, start=1):
         is_current_user = row["launched_by_id"] == current_user_id
         if is_current_user:
             current_user_rank = rank
+            current_user_runs = row[metric]
         if rank <= 10:
             display_name = usernames_by_id.get(row["launched_by_id"]) or ""
             entry: dict[str, Any] = {
@@ -205,6 +207,7 @@ def _activity_level(
     return {
         "id": metric,
         "current_user_rank": current_user_rank,
+        "current_user_runs": current_user_runs,
         "total_users": len(ranked),
         "leaderboard": leaderboard,
     }

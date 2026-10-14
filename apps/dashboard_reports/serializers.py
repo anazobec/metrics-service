@@ -473,6 +473,9 @@ class ActivityLevelSerializer(serializers.Serializer):
     current_user_rank = serializers.IntegerField(
         allow_null=True, help_text="Rank of the current user (None if they have no runs)"
     )
+    current_user_runs = serializers.IntegerField(
+        help_text="Current user's value of this activity level's metric (0 if they have no runs)"
+    )
     total_users = serializers.IntegerField(help_text="Users the rank is out of")
     leaderboard = ActivityLevelRowSerializer(many=True)
 

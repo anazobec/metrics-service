@@ -387,12 +387,15 @@ class TestOrganizationLeaderboard:
 
 
 class TestActivityLevels:
+    """Per-user volume, breadth and consistency leaderboards and the current user's standing."""
+
     def test_shape_and_ids(self, authenticated_client, user):
         make_job(day(1), **_me(user))
         dims = get(authenticated_client)["activity_levels"]
         assert [d["id"] for d in dims] == ["volume", "breadth", "consistency"]
 
     def test_volume_ranks_by_successful_run_count(self, authenticated_client, user):
+        """Volume ranks users by successful run count and reports the current user's rank and count."""
         for _ in range(3):
             make_job(day(1), **_me(user))
         for _ in range(5):
@@ -401,6 +404,7 @@ class TestActivityLevels:
         volume = next(d for d in get(authenticated_client)["activity_levels"] if d["id"] == "volume")
         assert volume["total_users"] == 2
         assert volume["current_user_rank"] == 2
+        assert volume["current_user_runs"] == 3
         assert volume["leaderboard"][0] == {"rank": 1, "username": "OT", "runs": 5}
         assert volume["leaderboard"][1] == {
             "rank": 2,
@@ -410,19 +414,23 @@ class TestActivityLevels:
         }
 
     def test_breadth_counts_distinct_templates(self, authenticated_client, user):
+        """Breadth counts distinct templates, not runs."""
         for template_id in (1, 2, 3):
             make_job(day(1), template_id=template_id, **_me(user))
         make_job(day(2), template_id=1, **_me(user))
 
         breadth = next(d for d in get(authenticated_client)["activity_levels"] if d["id"] == "breadth")
         assert breadth["leaderboard"][0]["runs"] == 3
+        assert breadth["current_user_runs"] == 3
 
     def test_consistency_counts_distinct_active_days(self, authenticated_client, user):
+        """Consistency counts distinct active days, not runs."""
         for offset in (1, 1, 2, 5):
             make_job(day(offset), **_me(user))
 
         consistency = next(d for d in get(authenticated_client)["activity_levels"] if d["id"] == "consistency")
         assert consistency["leaderboard"][0]["runs"] == 3
+        assert consistency["current_user_runs"] == 3
 
     def test_grouped_by_launched_by_id_not_username(self, authenticated_client):
         # Same user id, username changed mid-window -> one leaderboard row.
@@ -448,10 +456,12 @@ class TestActivityLevels:
         assert volume["total_users"] == 1
 
     def test_current_user_rank_none_when_user_has_no_runs(self, authenticated_client):
+        """A user without successful runs has no rank and a count of 0."""
         make_job(day(1), launched_by_id=2, launched_by_username="other")
 
         volume = next(d for d in get(authenticated_client)["activity_levels"] if d["id"] == "volume")
         assert volume["current_user_rank"] is None
+        assert volume["current_user_runs"] == 0
 
     def test_other_usernames_masked_to_initials(self, authenticated_client):
         make_job(day(1), launched_by_id=2, launched_by_username="alice")
@@ -462,6 +472,8 @@ class TestActivityLevels:
 
 
 class TestUserAchievements:
+    """Achievements earned by the current user from their own successful runs."""
+
     def test_empty_without_successful_runs(self, authenticated_client, user):
         """No successful runs in the window means no user achievements."""
         make_job(day(1), status=JobStatusChoices.FAILED, **_me(user))
@@ -491,6 +503,12 @@ class TestUserAchievements:
             assert level["current_user_rank"] == 12
             assert len(level["leaderboard"]) == 10
             assert not any(row.get("is_current_user") for row in level["leaderboard"])
+        # Reported even though the user is not on any visible board: 7 runs, 1 template, 7 active days.
+        assert {d["id"]: d["current_user_runs"] for d in data["activity_levels"]} == {
+            "volume": 7,
+            "breadth": 1,
+            "consistency": 7,
+        }
         assert data["user_achievements"] == ["ignition", "week_warrior"]
 
     def test_achievements_follow_launched_by_id_across_rename(self, authenticated_client, user):
@@ -683,6 +701,8 @@ class TestOrgAchievements:
 
 
 class TestEdgeCases:
+    """Boundary conditions: run statuses, UTC day bucketing, the top-10 cutoff and missing data."""
+
     @pytest.mark.parametrize(
         "status",
         [JobStatusChoices.ERROR, JobStatusChoices.CANCELED, JobStatusChoices.RUNNING, JobStatusChoices.PENDING],
@@ -696,6 +716,8 @@ class TestEdgeCases:
         assert_empty_org_streak(data["org_streak"])
         assert data["user_achievements"] == []
         assert all(d["total_users"] == 0 for d in data["activity_levels"])
+        assert all(d["current_user_rank"] is None for d in data["activity_levels"])
+        assert all(d["current_user_runs"] == 0 for d in data["activity_levels"])
 
     def test_runs_bucket_by_utc_calendar_day(self, authenticated_client):
         # 23:00 and 00:00 of the same UTC day -> one day; 00:00 next day -> separate.
@@ -764,6 +786,7 @@ class TestEdgeCases:
         volume = next(d for d in get(authenticated_client)["activity_levels"] if d["id"] == "volume")
         assert volume["total_users"] == 12
         assert volume["current_user_rank"] == 12
+        assert volume["current_user_runs"] == 1
         assert len(volume["leaderboard"]) == 10
         assert all(row["username"] != user.username for row in volume["leaderboard"])
 
