@@ -11,13 +11,18 @@ import json
 from unittest import mock
 
 import pytest
+from django.db import DatabaseError
 from django.urls import reverse
 
 from apps.core.models import User
 from apps.dashboard_reports.models import JobData, JobStatusChoices
+from apps.dashboard_reports.viewsets import dashboard_leaderboards
 from apps.dynamic_settings.models import Setting
 
 pytestmark = [pytest.mark.unit, pytest.mark.django_db]
+
+# The real helper; the autouse ``awx_templates`` fixture replaces the module attribute.
+_real_awx_connection = dashboard_leaderboards._awx_connection
 
 # Pinned clock. Window = window_start (FIXED_NOW.date() - 29d) . FIXED_NOW.date().
 FIXED_NOW = datetime.datetime(2026, 6, 15, 12, 0, 0, tzinfo=datetime.UTC)
@@ -38,6 +43,21 @@ class _FixedDatetime(datetime.datetime):
 @pytest.fixture(autouse=True)
 def _frozen_now(monkeypatch):
     monkeypatch.setattr("apps.dashboard_reports.viewsets.dashboard_leaderboards.datetime", _FixedDatetime)
+
+
+@pytest.fixture(autouse=True)
+def awx_templates(monkeypatch):
+    """Stub the AWX lookup; by default every template is a job template."""
+    module = "apps.dashboard_reports.viewsets.dashboard_leaderboards"
+    monkeypatch.setattr(f"{module}._awx_connection", mock.MagicMock())
+    fetch = mock.Mock(side_effect=lambda _db_connection, template_ids: set(template_ids))
+    monkeypatch.setattr(f"{module}.fetch_job_template_ids", fetch)
+    return fetch
+
+
+def only_job_templates(*job_template_ids: int):
+    """Stub for an AWX whose only job templates are ``job_template_ids``."""
+    return lambda _db_connection, template_ids: set(template_ids) & set(job_template_ids)
 
 
 @pytest.fixture
@@ -884,6 +904,150 @@ class TestResponseShape:
             # One run as the authenticated user so the per-user achievements path
             # (including the "reliable" streak scan) is exercised too.
             make_job(day(offset), org_id=1, org_name="Org 1", template_id=offset % 5 + 1, **_me(user))
-        # 14 queries today (incl. SHOW_LEADERBOARD flag and 2 for org memberships), 1 spare
-        with django_assert_max_num_queries(15):
+        # 15 queries today (incl. SHOW_LEADERBOARD flag, 2 for org memberships, 1 for template ids), 1 spare
+        with django_assert_max_num_queries(16):
             assert authenticated_client.get(URL).status_code == 200
+
+
+class TestAwxJobTemplateFilter:
+    """Only AWX job template runs count."""
+
+    @pytest.fixture(autouse=True)
+    def _job_templates(self, awx_templates):
+        """Template 1 is the only AWX job template."""
+        awx_templates.side_effect = only_job_templates(1)
+
+    def test_runs_of_non_job_templates_are_excluded(self, authenticated_client):
+        """System job and ad-hoc runs are left out of counts and the featured template."""
+        make_job(day(1), template_id=1, template_name="Deploy")
+        for _ in range(3):
+            make_job(day(2), template_id=99, template_name="Cleanup Activity Stream")  # system job template
+        make_job(day(3), template_id=None, template_name="")  # ad-hoc run
+
+        data = get(authenticated_client)
+        assert data["job_runs"] == 1
+        assert data["featured_template"] == {"id": 1, "name": "Deploy", "run_count": 1}
+
+    def test_non_job_template_runs_excluded_from_activity_levels(self, authenticated_client, user):
+        """Users with only non-job-template runs are not ranked."""
+        make_job(day(1), template_id=1, **_me(user))
+        make_job(day(1), template_id=99, launched_by_id=2, launched_by_username="other")
+
+        volume = next(d for d in get(authenticated_client)["activity_levels"] if d["id"] == "volume")
+        assert volume["total_users"] == 1
+
+    def test_non_job_template_runs_do_not_count_toward_reliable_streak(self, authenticated_client, user):
+        """Non-job-template successes do not build the reliable streak."""
+        for offset in range(20):
+            make_job(day(offset), template_id=99, **_me(user))
+        make_job(day(21), template_id=1, **_me(user))
+
+        assert "reliable" not in get(authenticated_client)["user_achievements"]
+
+    def test_no_awx_job_templates_counts_nothing(self, authenticated_client, user, awx_templates):
+        """Without AWX job templates every metric is empty."""
+        awx_templates.side_effect = only_job_templates()
+        make_job(day(1), template_id=1, **_me(user))
+
+        data = get(authenticated_client)
+        assert data["job_runs"] == 0
+        assert data["featured_template"] is None
+        assert data["user_achievements"] == []
+
+    def test_awx_looks_up_only_templates_run_in_window(self, authenticated_client, awx_templates):
+        """Only templates with a finished run in the window are sent to AWX."""
+        make_job(day(1), template_id=1)
+        make_job(day(2), template_id=2, status=JobStatusChoices.FAILED)  # any outcome status
+        make_job(day(3), template_id=None)  # ad-hoc: nothing to look up
+        make_job(day(4), template_id=3, status=JobStatusChoices.RUNNING)  # not an outcome
+        make_job(day(-1), template_id=4)  # before the window
+
+        get(authenticated_client)
+        awx_templates.assert_called_once_with(mock.ANY, [1, 2])
+
+    def test_awx_not_contacted_without_template_runs_in_window(self, authenticated_client, awx_templates):
+        """No template runs in the window means no AWX connection."""
+        make_job(day(1), template_id=None)  # ad-hoc only
+        make_job(day(-1), template_id=1)  # before the window
+
+        data = get(authenticated_client)
+        assert data["job_runs"] == 0
+        awx_templates.assert_not_called()
+        dashboard_leaderboards._awx_connection.assert_not_called()
+
+    def test_failed_run_of_job_template_without_successes_breaks_reliable_streak(
+        self, authenticated_client, user, awx_templates
+    ):
+        """A failed run breaks the streak even if its template has no success in the window."""
+        awx_templates.side_effect = only_job_templates(1, 5)
+        base = day(10)
+        for i in range(10):
+            make_job(base + datetime.timedelta(minutes=i), template_id=1, **_me(user))
+        # Template 5 is a job template with no successful run in the window.
+        make_job(base + datetime.timedelta(minutes=10), status=JobStatusChoices.FAILED, template_id=5, **_me(user))
+        for i in range(11, 21):
+            make_job(base + datetime.timedelta(minutes=i), template_id=1, **_me(user))
+
+        assert "reliable" not in get(authenticated_client)["user_achievements"]
+
+    @pytest.mark.parametrize("failing", ["_awx_connection", "fetch_job_template_ids"])
+    def test_returns_503_when_awx_lookup_fails(self, authenticated_client, monkeypatch, failing):
+        """AWX connection or query failure returns 503 and logs the cause once."""
+        logger = mock.Mock()
+        monkeypatch.setattr(dashboard_leaderboards, "logger", logger)
+        error = RuntimeError("AWX database unavailable")
+        monkeypatch.setattr(dashboard_leaderboards, failing, mock.Mock(side_effect=error))
+        make_job(day(1), template_id=1)
+
+        response = authenticated_client.get(URL)
+        assert response.status_code == 503
+        assert response.data == {"detail": "Failed to fetch job templates from AWX database"}
+        # One warning carrying the cause, no second traceback.
+        logger.warning.assert_called_once_with(mock.ANY, error)
+        logger.exception.assert_not_called()
+
+    def test_service_db_error_is_not_reported_as_awx_error(self, authenticated_client, awx_templates, monkeypatch):
+        """A service DB error propagates instead of becoming a 503."""
+        monkeypatch.setattr(
+            dashboard_leaderboards, "_window_template_ids", mock.Mock(side_effect=DatabaseError("service DB down"))
+        )
+
+        with pytest.raises(DatabaseError):
+            authenticated_client.get(URL)
+        awx_templates.assert_not_called()
+
+
+class TestAwxConnection:
+    """The leaderboard's own AWX connection: settings kept, timeouts added, always closed."""
+
+    @pytest.fixture
+    def awx(self, monkeypatch):
+        """Mock ``awx`` database wrapper with configured connection parameters."""
+        awx = mock.Mock()
+        awx.get_connection_params.return_value = {
+            "host": "awx-db",
+            "sslmode": "verify-full",
+            "options": "-c search_path=awx",
+        }
+        monkeypatch.setattr(dashboard_leaderboards, "connections", {"awx": awx})
+        return awx
+
+    def test_settings_kept_and_timeouts_added(self, awx):
+        """Settings and existing options are kept; both timeouts are added."""
+        with _real_awx_connection() as connection:
+            assert connection is awx.Database.connect.return_value
+
+        awx.Database.connect.assert_called_once_with(
+            host="awx-db",
+            sslmode="verify-full",
+            options="-c search_path=awx -c statement_timeout=5000",
+            connect_timeout=5,
+        )
+        connection.close.assert_called_once()
+
+    def test_closed_on_error(self, awx):
+        """The connection is closed when the block raises."""
+        with pytest.raises(RuntimeError), _real_awx_connection():
+            raise RuntimeError("query failed")
+
+        awx.Database.connect.return_value.close.assert_called_once()

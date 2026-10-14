@@ -23,6 +23,13 @@ class AWXQuery(enum.Enum):
         "FROM main_unifiedjobtemplate ujt "
         "JOIN main_jobtemplate jt on jt.unifiedjobtemplate_ptr_id = ujt.id"
     )
+    # Subset of the given ids that are job templates.
+    JOB_TEMPLATE_IDS = (
+        "SELECT ujt.id "
+        "FROM main_unifiedjobtemplate ujt "
+        "JOIN main_jobtemplate jt on jt.unifiedjobtemplate_ptr_id = ujt.id "
+        "WHERE ujt.id = ANY(%s)"
+    )
     PROJECTS = (
         "SELECT ujt.id, ujt.name "
         "FROM main_unifiedjobtemplate ujt "
@@ -173,6 +180,19 @@ def fetch_templates(**kwargs) -> tuple[list[dict[str, Any]], int]:
     return fetch_id_name(
         AWXQuery.TEMPLATES, join_alias="ujt.", error_msg="Error fetching job templates from AWX database", **kwargs
     )
+
+
+def fetch_job_template_ids(db_connection, template_ids: list[int]) -> set[int]:
+    """Return the ids from ``template_ids`` that are AWX job templates; empty input skips the query."""
+    if not template_ids:
+        return set()
+    try:
+        with db_connection.cursor() as cursor:
+            cursor.execute(AWXQuery.JOB_TEMPLATE_IDS.value, [template_ids])
+            return {row[0] for row in cursor.fetchall()}
+    except Exception:
+        logger.exception("Error fetching job template ids from AWX database")
+        raise
 
 
 def fetch_projects(**kwargs) -> tuple[list[dict[str, Any]], int]:

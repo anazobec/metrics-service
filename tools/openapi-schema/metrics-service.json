@@ -1149,6 +1149,16 @@
                             }
                         },
                         "description": ""
+                    },
+                    "503": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DashboardLeaderboardAwxUnavailableResponse"
+                                }
+                            }
+                        },
+                        "description": ""
                     }
                 },
                 "x-ai-description": "List all dashboard reports leaderboard"
@@ -12240,6 +12250,17 @@
                 },
                 "required": [
                     "show_leaderboard"
+                ]
+            },
+            "DashboardLeaderboardAwxUnavailableResponse": {
+                "type": "object",
+                "properties": {
+                    "detail": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "detail"
                 ]
             },
             "DashboardLeaderboardDisabledResponse": {
