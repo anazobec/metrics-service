@@ -597,7 +597,7 @@ def generic_collect_metrics(
             )
 
         entry = get_entry_by_type(collector_type)
-        collected = apply_exclusions(raw_data, entry.exclude_columns) if entry else raw_data
+        collected = apply_exclusions(raw_data, entry.exclude_columns, entry.key_field) if entry else raw_data
 
         rollup_data = config["rollup_processor"]().prepare(collected) if config["rollup_processor"] else collected
 

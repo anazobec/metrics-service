@@ -92,6 +92,16 @@ class CollectorEntry:
             raise ValueError(f"Enabled collector needs a payload_schema: {self.name}")
 
     @property
+    def payload_shape(self) -> str | None:
+        """Top-level JSON shape of the payload (``object`` or ``array``), from ``payload_schema``."""
+        return self.payload_schema.kind if self.payload_schema else None
+
+    @property
+    def key_field(self) -> str | None:
+        """What top-level object keys represent, or None for arrays and fixed-key objects."""
+        return self.payload_schema.key_field if self.payload_schema else None
+
+    @property
     def accepts_since_until(self) -> bool:
         """Whether this collector accepts since/until bounds (False for snapshots)."""
         return self.mode in _WINDOWED_MODES
@@ -112,7 +122,7 @@ _ENABLED: list[CollectorEntry] = [
         # the dashboard JobData sync needs it to resolve the current user's AWX id. It must not
         # reach the analytics API, so it is withheld here rather than dropped in the m-u SQL.
         exclude_columns=("launched_by_username",),
-        description="Job executions, including status and timing, organization, inventory, project, template, execution environment, launcher, labels, and host count.",
+        description="Job executions, including status and timing, organization, inventory, project, template, execution environment, launcher, labels, and host count. The nested installed_collections object is keyed by collection FQCN.",
     ),
     CollectorEntry(
         "controller.unified_jobs",
@@ -120,7 +130,7 @@ _ENABLED: list[CollectorEntry] = [
         mode="hourly",
         enabled=True,
         payload_schema=PAYLOAD_SCHEMAS["unified_jobs"],
-        description="Unified job records with status, timing, organization, inventory, execution environment, template, project SCM type, and job details.",
+        description="Unified job records with status, timing, organization, inventory, execution environment, template, project SCM type, and job details. The nested installed_collections object is keyed by collection FQCN.",
     ),
     CollectorEntry(
         "controller.job_host_summary_service",
@@ -235,7 +245,7 @@ _ENABLED: list[CollectorEntry] = [
         mode="snapshot",
         enabled=True,
         payload_schema=PAYLOAD_SCHEMAS["counts"],
-        description="Counts of Controller objects, inventories by kind, non-sync jobs, active hosts and sessions, running and pending jobs, and database connections.",
+        description="Counts of Controller objects, inventories by kind, non-sync jobs, active hosts and sessions, running and pending jobs, and database connections. The nested inventories object is keyed by kind.",
     ),
     CollectorEntry(
         "controller.cred_type_counts",

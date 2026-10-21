@@ -159,6 +159,9 @@ paths:
         - `collectors`: list of enabled collector descriptions.
         - `name`: public `group.function` collector name.
         - `description`: summary of the collector's output.
+        - `payload_shape`: top-level JSON shape of `payload`, either `object` or `array`.
+        - `key_field`: field represented by top-level object keys, or null when the payload is an array or
+          the object has fixed keys.
         - `mode`: `hourly`, `daily`, or `snapshot`.
         - `accepts_since_until`: whether collection windows are supported.
         - `last_collect`: timestamp when the latest successful collection finished, or null if it has not
@@ -184,7 +187,10 @@ paths:
                     - name: controller.unified_jobs_dashboard
                       description: Job executions, including status and timing, organization,
                         inventory, project, template, execution environment, launcher,
-                        labels, and host count.
+                        labels, and host count. The nested installed_collections object
+                        is keyed by collection FQCN.
+                      payload_shape: array
+                      key_field: null
                       mode: hourly
                       accepts_since_until: true
                       last_collect: null
@@ -193,7 +199,10 @@ paths:
                     - name: controller.unified_jobs
                       description: Unified job records with status, timing, organization,
                         inventory, execution environment, template, project SCM type,
-                        and job details.
+                        and job details. The nested installed_collections object is
+                        keyed by collection FQCN.
+                      payload_shape: array
+                      key_field: null
                       mode: hourly
                       accepts_since_until: true
                       last_collect: null
@@ -202,6 +211,8 @@ paths:
                     - name: controller.job_host_summary_service
                       description: Per-job host results and counts, with host, job,
                         template, inventory, organization, and project context.
+                      payload_shape: array
+                      key_field: null
                       mode: hourly
                       accepts_since_until: true
                       last_collect: null
@@ -210,6 +221,8 @@ paths:
                     - name: controller.job_host_summary
                       description: Per-job host results, counts, host connection variables,
                         and job, template, inventory, organization, and project context.
+                      payload_shape: array
+                      key_field: null
                       mode: hourly
                       accepts_since_until: true
                       last_collect: null
@@ -218,6 +231,8 @@ paths:
                     - name: controller.credentials_service
                       description: Distinct managed credential types used by jobs
                         completed in the collection window.
+                      payload_shape: array
+                      key_field: null
                       mode: hourly
                       accepts_since_until: true
                       last_collect: null
@@ -227,6 +242,8 @@ paths:
                       description: Selected job events for jobs completed in the window,
                         including event actions, task/play/role, host, result flags,
                         warnings, and deprecations.
+                      payload_shape: array
+                      key_field: null
                       mode: hourly
                       accepts_since_until: true
                       last_collect: null
@@ -235,6 +252,8 @@ paths:
                     - name: controller.main_jobevent
                       description: Runner event records associated with job host summaries,
                         including event action, task/play/role, host, and result flags.
+                      payload_shape: array
+                      key_field: null
                       mode: hourly
                       accepts_since_until: true
                       last_collect: null
@@ -244,6 +263,8 @@ paths:
                       description: Raw job events modified in the window, including
                         event details, playbook statistics, task/play/role, host,
                         timing, warnings, and deprecations.
+                      payload_shape: array
+                      key_field: null
                       mode: hourly
                       accepts_since_until: true
                       last_collect: null
@@ -252,6 +273,8 @@ paths:
                     - name: controller.workflow_job_node_table
                       description: Workflow job node executions, their job/template/workflow/inventory
                         references, and success, failure, and always edges.
+                      payload_shape: array
+                      key_field: null
                       mode: hourly
                       accepts_since_until: true
                       last_collect: null
@@ -260,6 +283,8 @@ paths:
                     - name: controller.query_info
                       description: 'Collection metadata: requested bounds and collection
                         type; it does not query the Controller database.'
+                      payload_shape: object
+                      key_field: null
                       mode: hourly
                       accepts_since_until: true
                       last_collect: null
@@ -269,6 +294,8 @@ paths:
                       description: Execution environment records, including image,
                         description, ownership, organization, credential, management,
                         and pull settings.
+                      payload_shape: array
+                      key_field: null
                       mode: snapshot
                       accepts_since_until: false
                       last_collect: null
@@ -278,6 +305,8 @@ paths:
                       description: Selected Controller settings and license details,
                         plus Controller and metrics-utility versions and runtime platform
                         metadata.
+                      payload_shape: object
+                      key_field: null
                       mode: snapshot
                       accepts_since_until: false
                       last_collect: null
@@ -286,6 +315,8 @@ paths:
                     - name: controller.controller_version_service
                       description: Distinct versions reported by enabled control and
                         hybrid Controller instances.
+                      payload_shape: array
+                      key_field: null
                       mode: snapshot
                       accepts_since_until: false
                       last_collect: null
@@ -295,6 +326,8 @@ paths:
                       description: Estimated row counts and table, index, and total
                         sizes for the job event, unified job, and job host summary
                         tables.
+                      payload_shape: array
+                      key_field: null
                       mode: snapshot
                       accepts_since_until: false
                       last_collect: null
@@ -303,6 +336,8 @@ paths:
                     - name: controller.feature_flags_service
                       description: Enabled boolean platform feature flags and their
                         descriptions, support levels, toggle types, and visibility.
+                      payload_shape: array
+                      key_field: null
                       mode: snapshot
                       accepts_since_until: false
                       last_collect: null
@@ -311,7 +346,10 @@ paths:
                     - name: controller.counts
                       description: Counts of Controller objects, inventories by kind,
                         non-sync jobs, active hosts and sessions, running and pending
-                        jobs, and database connections.
+                        jobs, and database connections. The nested inventories object
+                        is keyed by kind.
+                      payload_shape: object
+                      key_field: null
                       mode: snapshot
                       accepts_since_until: false
                       last_collect: null
@@ -320,6 +358,8 @@ paths:
                     - name: controller.cred_type_counts
                       description: Credential counts grouped by credential type, including
                         type name and whether the type is managed.
+                      payload_shape: object
+                      key_field: credential_type_id
                       mode: snapshot
                       accepts_since_until: false
                       last_collect: null
@@ -328,6 +368,8 @@ paths:
                     - name: controller.host_metric_summary_monthly_table
                       description: Monthly host capacity and usage summaries, including
                         hosts added, deleted, and indirectly managed.
+                      payload_shape: array
+                      key_field: null
                       mode: snapshot
                       accepts_since_until: false
                       last_collect: null
@@ -337,6 +379,8 @@ paths:
                       description: Controller instance topology, version, capacity,
                         CPU, memory, node type, enablement, and current and remaining
                         capacity.
+                      payload_shape: object
+                      key_field: uuid
                       mode: snapshot
                       accepts_since_until: false
                       last_collect: null
@@ -345,6 +389,8 @@ paths:
                     - name: controller.inventory_counts
                       description: Inventory names and kinds with host and source
                         counts, source details, and smart inventory entries.
+                      payload_shape: object
+                      key_field: inventory_id
                       mode: snapshot
                       accepts_since_until: false
                       last_collect: null
@@ -353,6 +399,8 @@ paths:
                     - name: controller.org_counts
                       description: Organization names with distinct user and team
                         counts.
+                      payload_shape: object
+                      key_field: organization_id
                       mode: snapshot
                       accepts_since_until: false
                       last_collect: null
@@ -361,6 +409,8 @@ paths:
                     - name: controller.projects_by_scm_type
                       description: Project counts grouped by source-control type,
                         with empty types reported as manual.
+                      payload_shape: object
+                      key_field: scm_type
                       mode: snapshot
                       accepts_since_until: false
                       last_collect: null
@@ -370,6 +420,8 @@ paths:
                       description: Unified job template identity, type, execution
                         environment, ownership, last/current/next job references,
                         scheduling, and status.
+                      payload_shape: array
+                      key_field: null
                       mode: snapshot
                       accepts_since_until: false
                       last_collect: null
@@ -379,6 +431,8 @@ paths:
                       description: Workflow job template node definitions, inventory
                         and template references, convergence settings, and success,
                         failure, and always edges.
+                      payload_shape: array
+                      key_field: null
                       mode: snapshot
                       accepts_since_until: false
                       last_collect: null
@@ -388,6 +442,8 @@ paths:
                       description: Enabled inventory hosts with inventory and organization
                         context, last automation time, connection variables, and selected
                         hardware and system facts.
+                      payload_shape: array
+                      key_field: null
                       mode: snapshot
                       accepts_since_until: false
                       last_collect: null
@@ -397,6 +453,8 @@ paths:
                       description: Enabled hosts created or modified in the window,
                         with the same inventory, organization, automation, connection,
                         and selected fact data as main_host.
+                      payload_shape: array
+                      key_field: null
                       mode: daily
                       accepts_since_until: true
                       last_collect: null
@@ -406,6 +464,8 @@ paths:
                       description: Host automation and deletion metrics, counters,
                         inventory usage, and selected host identity and connection
                         facts.
+                      payload_shape: array
+                      key_field: null
                       mode: daily
                       accepts_since_until: true
                       last_collect: null
@@ -414,6 +474,8 @@ paths:
                     - name: controller.main_indirectmanagednodeaudit
                       description: Audit records for indirect managed nodes, including
                         their organization and collection data.
+                      payload_shape: array
+                      key_field: null
                       mode: daily
                       accepts_since_until: true
                       last_collect: null
@@ -8022,7 +8084,8 @@ components:
             allOf:
             - $ref: '#/components/schemas/CredentialTypeCountPayload'
             nullable: true
-          description: Credential counts keyed by credential type ID.
+          description: Credential counts keyed by credential type ID. Keys are credential_type_id
+            values.
       required:
       - payload
     AnalyticsPayloadControllerCredentialsService:
@@ -8295,7 +8358,7 @@ components:
             - $ref: '#/components/schemas/InstanceInfoRecordPayload'
             nullable: true
           description: Controller instance topology and consumed capacity keyed by
-            UUID.
+            UUID. Keys are uuid values.
       required:
       - payload
     AnalyticsPayloadControllerInventoryCounts:
@@ -8342,7 +8405,8 @@ components:
             allOf:
             - $ref: '#/components/schemas/InventoryCountPayload'
             nullable: true
-          description: Inventory details keyed by inventory ID.
+          description: Inventory details keyed by inventory ID. Keys are inventory_id
+            values.
       required:
       - payload
     AnalyticsPayloadControllerJobHostSummary:
@@ -8755,6 +8819,7 @@ components:
             - $ref: '#/components/schemas/OrganizationCountPayload'
             nullable: true
           description: Organization user and team counts keyed by organization ID.
+            Keys are organization_id values.
       required:
       - payload
     AnalyticsPayloadControllerProjectsByScmType:
@@ -8801,7 +8866,7 @@ components:
             type: integer
             nullable: true
           description: Project counts keyed by source-control type, with manual for
-            projects without one.
+            projects without one. Keys are scm_type values.
       required:
       - payload
     AnalyticsPayloadControllerQueryInfo:
@@ -9197,6 +9262,23 @@ components:
         description:
           type: string
           readOnly: true
+        payload_shape:
+          enum:
+          - object
+          - array
+          type: string
+          readOnly: true
+          description: |-
+            Top-level JSON shape of payload: object or array.
+
+            * `object` - object
+            * `array` - array
+        key_field:
+          type: string
+          readOnly: true
+          nullable: true
+          description: Field represented by top-level object keys, or null when not
+            applicable.
         mode:
           type: string
           readOnly: true

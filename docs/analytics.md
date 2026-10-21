@@ -24,6 +24,11 @@ The registry is the source of truth in
   [`apps/analytics/payload_schemas.py`](../apps/analytics/payload_schemas.py);
   required for enabled entries
 
+`payload_shape` and `key_field` are derived from `payload_schema` and returned by the
+discovery endpoint: `payload_shape` is the top-level JSON shape of `payload` (`array` or
+`object`), and `key_field` says what the top-level object keys represent (for example
+`credential_type_id`), or null for arrays and fixed-key objects.
+
 `accepts_since_until` is derived from `mode`. It describes whether the collector
 can receive `since` and `until` bounds; it does not require both bounds to be
 present.
@@ -49,8 +54,8 @@ read from the Controller (`awx`) database.
 
 | Name | `collector_type` | Mode | `accepts_since_until` | Data extracted |
 | --- | --- | --- | --- | --- |
-| `controller.unified_jobs_dashboard` | `unified_jobs` | hourly | yes | Job executions, including status and timing, organization, inventory, project, template, execution environment, launcher, labels, and host count. |
-| `controller.unified_jobs` | `unified_jobs_base` | hourly | yes | Unified job records with status, timing, organization, inventory, execution environment, template, project SCM type, and job details. |
+| `controller.unified_jobs_dashboard` | `unified_jobs` | hourly | yes | Job executions, including status and timing, organization, inventory, project, template, execution environment, launcher, labels, and host count. The nested `installed_collections` object is keyed by collection FQCN. |
+| `controller.unified_jobs` | `unified_jobs_base` | hourly | yes | Unified job records with status, timing, organization, inventory, execution environment, template, project SCM type, and job details. The nested `installed_collections` object is keyed by collection FQCN. |
 | `controller.job_host_summary` | `job_host_summary` | hourly | yes | Per-job host results, counts, host connection variables, and job, template, inventory, organization, and project context. |
 | `controller.job_host_summary_service` | `job_host_summary_service` | hourly | yes | Per-job host results and counts, with host, job, template, inventory, organization, and project context. |
 | `controller.credentials_service` | `credentials_service` | hourly | yes | Distinct managed credential types used by jobs completed in the collection window. |
@@ -64,7 +69,7 @@ read from the Controller (`awx`) database.
 | `controller.controller_version_service` | `controller_version_service` | snapshot | no | Distinct versions reported by enabled control and hybrid Controller instances. |
 | `controller.table_metadata` | `table_metadata` | snapshot | no | Estimated row counts and table, index, and total sizes for the job event, unified job, and job host summary tables. |
 | `controller.feature_flags_service` | `feature_flags_service` | snapshot | no | Enabled boolean platform feature flags and their descriptions, support levels, toggle types, and visibility. |
-| `controller.counts` | `counts` | snapshot | no | Counts of Controller objects, inventories by kind, non-sync jobs, active hosts and sessions, running and pending jobs, and database connections. |
+| `controller.counts` | `counts` | snapshot | no | Counts of Controller objects, inventories by kind, non-sync jobs, active hosts and sessions, running and pending jobs, and database connections. The nested `inventories` object is keyed by kind. |
 | `controller.cred_type_counts` | `cred_type_counts` | snapshot | no | Credential counts grouped by credential type, including type name and whether the type is managed. |
 | `controller.host_metric_summary_monthly_table` | `host_metric_summary_monthly_table` | snapshot | no | Monthly host capacity and usage summaries, including hosts added, deleted, and indirectly managed. |
 | `controller.instance_info` | `instance_info` | snapshot | no | Controller instance topology, version, capacity, CPU, memory, node type, enablement, and current and remaining capacity. |
@@ -107,6 +112,8 @@ The response contains entries such as:
     {
       "name": "controller.config",
       "description": "Selected Controller settings and license details, plus Controller and metrics-utility versions and runtime platform metadata.",
+      "payload_shape": "object",
+      "key_field": null,
       "mode": "snapshot",
       "accepts_since_until": false,
       "rows_url": "https://metrics.example.com/api/v1/analytics/controller.config/",

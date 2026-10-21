@@ -14,6 +14,7 @@ pytestmark = [pytest.mark.unit, pytest.mark.django_db]
 ROOT = "/api/v1/analytics/"
 UNIFIED = "controller.unified_jobs_dashboard"
 CONFIG = "controller.config"
+INSTANCE_INFO = "controller.instance_info"
 
 
 def _row(collector, since, until, payload=None, cluster_id=None):
@@ -39,8 +40,19 @@ def test_root_lists_enabled_collectors(authenticated_client):
     unified = next(collector for collector in response.json()["collectors"] if collector["name"] == UNIFIED)
     assert unified["description"] == (
         "Job executions, including status and timing, organization, inventory, project, template, "
-        "execution environment, launcher, labels, and host count."
+        "execution environment, launcher, labels, and host count. The nested installed_collections "
+        "object is keyed by collection FQCN."
     )
+    assert unified["payload_shape"] == "array"
+    assert unified["key_field"] is None
+    config = next(collector for collector in response.json()["collectors"] if collector["name"] == CONFIG)
+    assert config["payload_shape"] == "object"
+    assert config["key_field"] is None
+    # A collector keyed by data reports what its top-level keys mean; the two object shapes
+    # are only distinguishable by that value.
+    instance_info = next(collector for collector in response.json()["collectors"] if collector["name"] == INSTANCE_INFO)
+    assert instance_info["payload_shape"] == "object"
+    assert instance_info["key_field"] == "uuid"
     assert "service.task_executions_service" not in names
     assert "dashboard.dashboard_jobs" not in names
     assert all(
@@ -79,6 +91,8 @@ def test_root_browsable_response_links_collector_urls(authenticated_client):
     assert response.status_code == 200
     assert 'href="http://testserver/api/v1/analytics/controller.config/"' in response.text
     assert "accepts_since_until" in response.text
+    assert "payload_shape" in response.text
+    assert "key_field" in response.text
     assert "collect_url" in response.text
 
 

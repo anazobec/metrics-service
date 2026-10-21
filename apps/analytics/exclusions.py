@@ -23,22 +23,24 @@ internal and is the reason the column is collected in the first place.
 
 Supported payload shapes
 ------------------------
-Collectors return one of three shapes (see the payload schemas in
-https://github.com/ansible/metrics-service/pull/460):
+Collectors return one of three shapes, told apart by the registry's ``payload_shape`` and
+``key_field`` (both derived from the collector's payload schema):
 
 * **array of records** — every DataFrame collector. Records are the array items, so the
   exclusion applies to each item's keys. This is the only shape with an exclusion today.
-* **object with fixed keys** — ``controller.config``, ``controller.counts``,
-  ``controller.query_info``. The payload *is* the record, so the exclusion applies to its
-  top-level keys.
-* **object keyed by data** — ``controller.instance_info`` (by ``uuid``),
-  ``controller.cred_type_counts`` (by ``credential_type_id``), and the other
-  ``key_field`` collectors. The records sit one level *below* the top-level keys, so a
-  column exclusion must descend into the values — **not supported here**, because this
-  shape is indistinguishable from a fixed-key object without the ``key_field`` metadata
-  that #460 introduces. Until then a guard test keeps ``exclude_columns`` off those
-  collectors rather than letting the exclusion silently no-op; once #460 lands, branch on
-  ``entry.key_field`` instead and drop the guard.
+* **object with fixed keys** (``key_field is None``) — ``controller.config``,
+  ``controller.counts``, ``controller.query_info``. The payload *is* the record, so the
+  exclusion applies to its top-level keys.
+* **object keyed by data** (``key_field`` set) — ``controller.instance_info`` (by
+  ``uuid``), ``controller.cred_type_counts`` (by ``credential_type_id``), and the other
+  keyed collectors. The records sit one level *below* the top-level keys, so the exclusion
+  descends into the values and leaves the keys alone. Filtering the top-level keys here
+  would both no-op on the real columns and, on a collector keyed by a string such as
+  ``controller.projects_by_scm_type``, drop a whole record whose key happened to collide
+  with an excluded column name.
+
+Callers pass ``entry.key_field`` so the two object shapes stay distinguishable; without it
+a keyed object would be mistaken for a record.
 """
 
 from __future__ import annotations
@@ -48,19 +50,28 @@ from typing import Any
 import pandas as pd
 
 
-def apply_exclusions(raw_data: Any, exclude_columns: tuple[str, ...]) -> Any:
+def _without(record: Any, excluded: set[str]) -> Any:
+    """Return one record without ``excluded`` keys, passing non-records through."""
+    if not isinstance(record, dict):
+        return record
+    return {key: value for key, value in record.items() if key not in excluded}
+
+
+def apply_exclusions(raw_data: Any, exclude_columns: tuple[str, ...], key_field: str | None = None) -> Any:
     """Return ``raw_data`` without ``exclude_columns``.
 
     Never mutates ``raw_data``: the same object is handed to in-service consumers that
     still need the excluded columns. Anything other than a DataFrame, a dict or a list is
     returned unchanged.
 
-    Only removes keys at record level — see the module docstring for which payload shapes
-    that covers, and why objects keyed by data are excluded from it for now.
+    Only removes keys at record level — see the module docstring for where the records sit
+    in each payload shape.
 
     Args:
         raw_data: a collector's ``gather()`` output.
         exclude_columns: column/key names to withhold; empty means no filtering.
+        key_field: the collector's ``CollectorEntry.key_field``. When set, ``raw_data`` is
+            an object keyed by data and its records are the values, not the object itself.
 
     Returns:
         A filtered copy, or ``raw_data`` itself when there is nothing to remove.
@@ -76,14 +87,14 @@ def apply_exclusions(raw_data: Any, exclude_columns: tuple[str, ...]) -> Any:
         return raw_data.drop(columns=present) if present else raw_data
 
     if isinstance(raw_data, dict):
-        # Fixed-key object: the payload is itself one record. Objects keyed by data are kept
-        # out of this path by a registry guard test until #460 provides key_field.
-        return {key: value for key, value in raw_data.items() if key not in excluded}
+        if key_field is not None:
+            # Keyed by data: the keys are values (an id, an scm_type), so they stay put and
+            # the exclusion applies one level down.
+            return {key: _without(value, excluded) for key, value in raw_data.items()}
+        # Fixed keys: the payload is itself one record.
+        return _without(raw_data, excluded)
 
     if isinstance(raw_data, list):
-        return [
-            {key: value for key, value in row.items() if key not in excluded} if isinstance(row, dict) else row
-            for row in raw_data
-        ]
+        return [_without(row, excluded) for row in raw_data]
 
     return raw_data

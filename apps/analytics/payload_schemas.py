@@ -35,6 +35,15 @@ class PayloadSchema:
     fields: tuple[PayloadField, ...] = ()
     item_fields: tuple[PayloadField, ...] = ()
     additional_properties: PayloadField | None = None
+    # What the top-level keys represent, for objects keyed by data (additional_properties).
+    key_field: str | None = None
+
+    def __post_init__(self) -> None:
+        """Reject shape metadata that contradicts the schema kind."""
+        if self.kind not in {"object", "array"}:
+            raise ValueError(f"Unsupported payload schema kind for {self.name}: {self.kind}")
+        if (self.key_field is not None) != (self.additional_properties is not None):
+            raise ValueError(f"key_field must be set exactly for keyed objects: {self.name}")
 
 
 def _field(name: str, type_: str, description: str = "", *, nullable: bool = True, **kwargs) -> PayloadField:
@@ -586,6 +595,7 @@ CRED_TYPE_COUNTS = PayloadSchema(
     name="CredTypeCountsPayload",
     kind="object",
     description="Credential counts keyed by credential type ID.",
+    key_field="credential_type_id",
     additional_properties=_map_value(
         "CredentialTypeCount",
         "object",
@@ -616,6 +626,7 @@ INSTANCE_INFO = PayloadSchema(
     name="InstanceInfoPayload",
     kind="object",
     description="Controller instance topology and consumed capacity keyed by UUID.",
+    key_field="uuid",
     additional_properties=_map_value(
         "InstanceInfoRecord",
         "object",
@@ -638,6 +649,7 @@ INVENTORY_COUNTS = PayloadSchema(
     name="InventoryCountsPayload",
     kind="object",
     description="Inventory details keyed by inventory ID.",
+    key_field="inventory_id",
     additional_properties=_map_value(
         "InventoryCount",
         "object",
@@ -665,6 +677,7 @@ ORG_COUNTS = PayloadSchema(
     name="OrgCountsPayload",
     kind="object",
     description="Organization user and team counts keyed by organization ID.",
+    key_field="organization_id",
     additional_properties=_map_value(
         "OrganizationCount",
         "object",
@@ -676,6 +689,7 @@ PROJECTS_BY_SCM_TYPE = PayloadSchema(
     name="ProjectsByScmTypePayload",
     kind="object",
     description="Project counts keyed by source-control type, with manual for projects without one.",
+    key_field="scm_type",
     additional_properties=_map_value("ProjectScmTypeCount", "integer"),
 )
 

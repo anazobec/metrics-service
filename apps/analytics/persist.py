@@ -89,7 +89,8 @@ def persist_analytics_payload(
         return
 
     try:
-        payload = {} if raw_data is None else to_jsonable(apply_exclusions(raw_data, entry.exclude_columns))
+        filtered = apply_exclusions(raw_data, entry.exclude_columns, entry.key_field)
+        payload = {} if raw_data is None else to_jsonable(filtered)
         cluster_id = _get_cluster_id(db_connection)
         # collector_type is the internal task key (for example, ``main_host``)
         # entry.name is the full whitelist/API/storage name (for example, ``controller.main_host``)

@@ -51,6 +51,9 @@ Response fields:
 - `collectors`: list of enabled collector descriptions.
 - `name`: public `group.function` collector name.
 - `description`: summary of the collector's output.
+- `payload_shape`: top-level JSON shape of `payload`, either `object` or `array`.
+- `key_field`: field represented by top-level object keys, or null when the payload is an array or
+  the object has fixed keys.
 - `mode`: `hourly`, `daily`, or `snapshot`.
 - `accepts_since_until`: whether collection windows are supported.
 - `last_collect`: timestamp when the latest successful collection finished, or null if it has not
@@ -114,6 +117,8 @@ def _collector_discovery_example() -> dict[str, list[dict[str, object]]]:
             {
                 "name": entry.name,
                 "description": entry.description,
+                "payload_shape": entry.payload_shape,
+                "key_field": entry.key_field,
                 "mode": entry.mode,
                 "accepts_since_until": entry.accepts_since_until,
                 "last_collect": None,
@@ -178,6 +183,8 @@ class AnalyticsRootView(APIView):
             SimpleNamespace(
                 name=entry.name,
                 description=entry.description,
+                payload_shape=entry.payload_shape,
+                key_field=entry.key_field,
                 mode=entry.mode,
                 accepts_since_until=entry.accepts_since_until,
                 last_collect=last_collect_by_collector.get(entry.name),

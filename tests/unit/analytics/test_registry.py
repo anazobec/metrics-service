@@ -30,6 +30,7 @@ def test_enabled_collectors_are_all_enabled():
         "controller.main_jobevent",
         "controller.unified_jobs",
     } <= set(enabled)
+    assert all(e.payload_shape in {"object", "array"} for e in enabled.values())
     # Pipeline-only, dashboard-only, AWX in-process, and external Prometheus collectors stay off.
     assert "service.task_executions_service" not in enabled
     assert "dashboard.dashboard_jobs" not in enabled
@@ -105,6 +106,17 @@ def test_payload_schemas_are_all_used_by_enabled_collectors():
 
 
 @pytest.mark.unit
+def test_payload_metadata_is_derived_from_payload_schema():
+    for entry in registry.enabled_collectors().values():
+        assert entry.payload_shape == entry.payload_schema.kind
+        assert entry.key_field == entry.payload_schema.key_field
+        # Keyed objects say what their keys are; arrays and fixed-key objects don't.
+        assert (entry.key_field is not None) == (entry.payload_schema.additional_properties is not None)
+    disabled = registry.get_entry("dashboard.dashboard_jobs")
+    assert (disabled.payload_shape, disabled.key_field) == (None, None)
+
+
+@pytest.mark.unit
 def test_enabled_collector_requires_payload_schema():
     with pytest.raises(ValueError, match="payload_schema"):
         registry.CollectorEntry("controller.example", collector_type="example", mode="hourly", enabled=True)
@@ -119,6 +131,26 @@ def test_accepts_since_until_by_mode():
     assert registry.get_entry("controller.events_table").accepts_since_until is True  # hourly
     assert registry.get_entry("controller.config").accepts_since_until is False  # snapshot
     assert registry.get_entry("controller.counts").accepts_since_until is False  # snapshot
+
+
+@pytest.mark.unit
+def test_payload_metadata():
+    # Dict collectors; every other enabled collector returns a DataFrame (array of records).
+    objects = {
+        "controller.query_info": None,
+        "controller.config": None,
+        "controller.counts": None,
+        "controller.cred_type_counts": "credential_type_id",
+        "controller.instance_info": "uuid",
+        "controller.inventory_counts": "inventory_id",
+        "controller.org_counts": "organization_id",
+        "controller.projects_by_scm_type": "scm_type",
+    }
+    for name, entry in registry.enabled_collectors().items():
+        if name in objects:
+            assert (entry.payload_shape, entry.key_field) == ("object", objects[name]), name
+        else:
+            assert (entry.payload_shape, entry.key_field) == ("array", None), name
 
 
 @pytest.mark.unit
@@ -184,16 +216,19 @@ def test_collectors_exclude_no_columns_by_default():
     assert all(not e.exclude_columns for e in others)
 
 
-# apply_exclusions removes keys at record level, which is only well defined for payloads whose
-# records are the array items or the object itself. Collectors returning an object *keyed by data*
-# (controller.instance_info by uuid, controller.cred_type_counts by credential_type_id, ...) hold
-# their records one level below the top-level keys, so an exclusion there would silently no-op.
-# Telling the two object shapes apart needs the key_field metadata from
-# https://github.com/ansible/metrics-service/pull/460 - until that lands, keep exclusions off them.
-_RECORD_LEVEL_EXCLUSION_COLLECTORS = {"controller.unified_jobs_dashboard"}
+def _record_fields(entry) -> tuple[str, ...]:
+    """Names declared for one record of a collector's payload, per payload shape."""
+    schema = entry.payload_schema
+    if schema.kind == "array":
+        return tuple(field.name for field in schema.item_fields)
+    if entry.key_field is not None:
+        return tuple(field.name for field in schema.additional_properties.fields)
+    return tuple(field.name for field in schema.fields)
 
 
 @pytest.mark.unit
-def test_exclusions_only_on_collectors_whose_records_are_top_level():
-    configured = {e.name for e in registry.COLLECTORS.values() if e.exclude_columns}
-    assert configured <= _RECORD_LEVEL_EXCLUSION_COLLECTORS
+def test_excluded_columns_are_not_declared_by_their_payload_schema():
+    """A withheld column must not be advertised by the OpenAPI schema that documents it."""
+    for entry in registry.enabled_collectors().values():
+        declared = set(_record_fields(entry))
+        assert declared.isdisjoint(entry.exclude_columns), entry.name
