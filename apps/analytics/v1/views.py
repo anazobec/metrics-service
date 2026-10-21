@@ -22,7 +22,11 @@ from rest_framework.views import APIView
 
 from apps.analytics.models import AnalyticsPayload
 from apps.analytics.registry import enabled_collectors, get_entry
-from apps.analytics.v1.serializers import AnalyticsPayloadSerializer, CollectorDiscoverySerializer
+from apps.analytics.v1.serializers import (
+    AnalyticsPayloadSerializer,
+    CollectorDiscoverySerializer,
+    analytics_payload_page_serializer,
+)
 from apps.core.url_prefix import replace_api_root
 
 _ANALYTICS_ROW_FIELDS_DESCRIPTION = """The linked collector row endpoints return paginated collection envelopes. Each row contains:
@@ -35,7 +39,9 @@ _ANALYTICS_ROW_FIELDS_DESCRIPTION = """The linked collector row endpoints return
 - `until`: exclusive end bound passed to the collector, or null for an open bound or snapshot.
 - `started_at`: timestamp when collection started.
 - `finished_at`: timestamp when collection finished.
-- `payload`: raw JSON output from the collector before rollup preparation.
+- `payload`: raw JSON output from the collector before rollup preparation. Its schema is selected
+  by `collector`; the discovery response and OpenAPI components identify every enabled collector's
+  fields and types.
 """
 
 _ANALYTICS_ROOT_DESCRIPTION = """List the collectors the analytics API exposes (discovery entry point).
@@ -52,6 +58,21 @@ Response fields:
 - `rows_url`: URL for stored collection envelopes.
 - `collect_url`: URL for triggering an on-demand collection task.
 """
+
+_ANALYTICS_PAGINATION_PARAMETERS = [
+    OpenApiParameter(
+        name="page",
+        type=OpenApiTypes.INT,
+        location=OpenApiParameter.QUERY,
+        description="A page number within the paginated result set.",
+    ),
+    OpenApiParameter(
+        name="page_size",
+        type=OpenApiTypes.INT,
+        location=OpenApiParameter.QUERY,
+        description="Number of results to return per page.",
+    ),
+]
 
 
 def _parse_dt(value):
@@ -171,7 +192,7 @@ class AnalyticsRootView(APIView):
         return Response({"collectors": serializer.data})
 
 
-class CollectorRowsView(generics.ListAPIView):
+class CollectorRowsView(generics.GenericAPIView):
     __doc__ = _ANALYTICS_ROW_FIELDS_DESCRIPTION
 
     permission_classes = [IsSystemAdminOrAuditor]
@@ -184,7 +205,9 @@ class CollectorRowsView(generics.ListAPIView):
 
     @extend_schema(
         description=_ANALYTICS_ROW_FIELDS_DESCRIPTION,
-        parameters=[
+        responses=analytics_payload_page_serializer(),
+        parameters=_ANALYTICS_PAGINATION_PARAMETERS
+        + [
             OpenApiParameter(
                 name="since",
                 type=OpenApiTypes.DATETIME,
@@ -201,7 +224,7 @@ class CollectorRowsView(generics.ListAPIView):
     )
     def get(self, request, *args, **kwargs):
         """Return paginated payloads for the requested collector."""
-        return super().get(request, *args, **kwargs)
+        return self.list(request, *args, **kwargs)
 
     def get_queryset(self):
         """Filter stored payloads for the collector by since/until *window overlap*.
@@ -242,7 +265,13 @@ class CollectorRowsView(generics.ListAPIView):
                 {"detail": "until must be after since"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        return super().list(request, *args, **kwargs)
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
 
 class CollectorCollectView(APIView):

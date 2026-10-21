@@ -481,8 +481,8 @@
         },
         "/api/v1/analytics/{collector}/": {
             "get": {
-                "operationId": "analytics_list",
-                "description": "The linked collector row endpoints return paginated collection envelopes. Each row contains:\n\n- `id`: unique stored collection row identifier.\n- `collector`: public `group.function` collector name.\n- `source`: originating platform component, normally `local`.\n- `cluster_id`: Controller installation UUID (`INSTALL_UUID`), or null if unavailable.\n- `since`: inclusive start bound passed to the collector, or null for an open bound or snapshot.\n- `until`: exclusive end bound passed to the collector, or null for an open bound or snapshot.\n- `started_at`: timestamp when collection started.\n- `finished_at`: timestamp when collection finished.\n- `payload`: raw JSON output from the collector before rollup preparation.\n",
+                "operationId": "analytics_retrieve_2",
+                "description": "The linked collector row endpoints return paginated collection envelopes. Each row contains:\n\n- `id`: unique stored collection row identifier.\n- `collector`: public `group.function` collector name.\n- `source`: originating platform component, normally `local`.\n- `cluster_id`: Controller installation UUID (`INSTALL_UUID`), or null if unavailable.\n- `since`: inclusive start bound passed to the collector, or null for an open bound or snapshot.\n- `until`: exclusive end bound passed to the collector, or null for an open bound or snapshot.\n- `started_at`: timestamp when collection started.\n- `finished_at`: timestamp when collection finished.\n- `payload`: raw JSON output from the collector before rollup preparation. Its schema is selected\n  by `collector`; the discovery response and OpenAPI components identify every enabled collector's\n  fields and types.\n",
                 "parameters": [
                     {
                         "in": "path",
@@ -493,22 +493,20 @@
                         "required": true
                     },
                     {
-                        "name": "page",
-                        "required": false,
                         "in": "query",
-                        "description": "A page number within the paginated result set.",
+                        "name": "page",
                         "schema": {
                             "type": "integer"
-                        }
+                        },
+                        "description": "A page number within the paginated result set."
                     },
                     {
-                        "name": "page_size",
-                        "required": false,
                         "in": "query",
-                        "description": "Number of results to return per page.",
+                        "name": "page_size",
                         "schema": {
                             "type": "integer"
-                        }
+                        },
+                        "description": "Number of results to return per page."
                     },
                     {
                         "in": "query",
@@ -552,7 +550,7 @@
                         "description": ""
                     }
                 },
-                "x-ai-description": "List all analytics"
+                "x-ai-description": "Retrieve single analytic"
             }
         },
         "/api/v1/analytics/{collector}/collect/": {
@@ -11958,63 +11956,1802 @@
                     "task_url"
                 ]
             },
-            "AnalyticsPayload": {
+            "AnalyticsPayloadByCollector": {
+                "oneOf": [
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerUnifiedJobsDashboard"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerUnifiedJobs"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerJobHostSummaryService"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerJobHostSummary"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerCredentialsService"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerMainJobeventService"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerMainJobevent"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerEventsTable"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerWorkflowJobNodeTable"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerQueryInfo"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerExecutionEnvironments"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerConfig"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerControllerVersionService"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerTableMetadata"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerFeatureFlagsService"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerCounts"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerCredTypeCounts"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerHostMetricSummaryMonthlyTable"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerInstanceInfo"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerInventoryCounts"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerOrgCounts"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerProjectsByScmType"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerUnifiedJobTemplateTable"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerWorkflowJobTemplateNodeTable"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerMainHost"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerMainHostDaily"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerMainHostmetric"
+                    },
+                    {
+                        "$ref": "#/components/schemas/AnalyticsPayloadControllerMainIndirectmanagednodeaudit"
+                    }
+                ],
+                "discriminator": {
+                    "propertyName": "collector",
+                    "mapping": {
+                        "controller.unified_jobs_dashboard": "#/components/schemas/AnalyticsPayloadControllerUnifiedJobsDashboard",
+                        "controller.unified_jobs": "#/components/schemas/AnalyticsPayloadControllerUnifiedJobs",
+                        "controller.job_host_summary_service": "#/components/schemas/AnalyticsPayloadControllerJobHostSummaryService",
+                        "controller.job_host_summary": "#/components/schemas/AnalyticsPayloadControllerJobHostSummary",
+                        "controller.credentials_service": "#/components/schemas/AnalyticsPayloadControllerCredentialsService",
+                        "controller.main_jobevent_service": "#/components/schemas/AnalyticsPayloadControllerMainJobeventService",
+                        "controller.main_jobevent": "#/components/schemas/AnalyticsPayloadControllerMainJobevent",
+                        "controller.events_table": "#/components/schemas/AnalyticsPayloadControllerEventsTable",
+                        "controller.workflow_job_node_table": "#/components/schemas/AnalyticsPayloadControllerWorkflowJobNodeTable",
+                        "controller.query_info": "#/components/schemas/AnalyticsPayloadControllerQueryInfo",
+                        "controller.execution_environments": "#/components/schemas/AnalyticsPayloadControllerExecutionEnvironments",
+                        "controller.config": "#/components/schemas/AnalyticsPayloadControllerConfig",
+                        "controller.controller_version_service": "#/components/schemas/AnalyticsPayloadControllerControllerVersionService",
+                        "controller.table_metadata": "#/components/schemas/AnalyticsPayloadControllerTableMetadata",
+                        "controller.feature_flags_service": "#/components/schemas/AnalyticsPayloadControllerFeatureFlagsService",
+                        "controller.counts": "#/components/schemas/AnalyticsPayloadControllerCounts",
+                        "controller.cred_type_counts": "#/components/schemas/AnalyticsPayloadControllerCredTypeCounts",
+                        "controller.host_metric_summary_monthly_table": "#/components/schemas/AnalyticsPayloadControllerHostMetricSummaryMonthlyTable",
+                        "controller.instance_info": "#/components/schemas/AnalyticsPayloadControllerInstanceInfo",
+                        "controller.inventory_counts": "#/components/schemas/AnalyticsPayloadControllerInventoryCounts",
+                        "controller.org_counts": "#/components/schemas/AnalyticsPayloadControllerOrgCounts",
+                        "controller.projects_by_scm_type": "#/components/schemas/AnalyticsPayloadControllerProjectsByScmType",
+                        "controller.unified_job_template_table": "#/components/schemas/AnalyticsPayloadControllerUnifiedJobTemplateTable",
+                        "controller.workflow_job_template_node_table": "#/components/schemas/AnalyticsPayloadControllerWorkflowJobTemplateNodeTable",
+                        "controller.main_host": "#/components/schemas/AnalyticsPayloadControllerMainHost",
+                        "controller.main_host_daily": "#/components/schemas/AnalyticsPayloadControllerMainHostDaily",
+                        "controller.main_hostmetric": "#/components/schemas/AnalyticsPayloadControllerMainHostmetric",
+                        "controller.main_indirectmanagednodeaudit": "#/components/schemas/AnalyticsPayloadControllerMainIndirectmanagednodeaudit"
+                    }
+                }
+            },
+            "AnalyticsPayloadControllerConfig": {
                 "type": "object",
-                "description": "Serialise one stored raw collection envelope.",
                 "properties": {
                     "id": {
                         "type": "integer",
                         "readOnly": true
                     },
                     "collector": {
+                        "enum": [
+                            "controller.config"
+                        ],
                         "type": "string",
-                        "readOnly": true,
-                        "description": "Collector name (collector_type / API path segment)"
+                        "description": "* `controller.config` - controller.config",
+                        "default": "controller.config"
                     },
                     "source": {
                         "type": "string",
-                        "readOnly": true,
-                        "description": "Originating platform component, such as local, controller, eda, or hub."
+                        "readOnly": true
                     },
                     "cluster_id": {
                         "type": "string",
                         "readOnly": true,
                         "nullable": true,
-                        "description": "Controller installation UUID (INSTALL_UUID) read from the AWX database, if available."
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
                     },
                     "since": {
                         "type": "string",
                         "format": "date-time",
                         "readOnly": true,
-                        "nullable": true,
-                        "description": "`since` passed to the collector (inclusive), if any"
+                        "nullable": true
                     },
                     "until": {
                         "type": "string",
                         "format": "date-time",
                         "readOnly": true,
-                        "nullable": true,
-                        "description": "`until` passed to the collector (exclusive), if any"
+                        "nullable": true
                     },
                     "started_at": {
                         "type": "string",
                         "format": "date-time",
-                        "readOnly": true,
-                        "description": "When collection (gather) started"
+                        "readOnly": true
                     },
                     "finished_at": {
                         "type": "string",
                         "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/ConfigPayload"
+                            }
+                        ],
+                        "description": "Controller configuration, license, version, and platform metadata."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerControllerVersionService": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.controller_version_service"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.controller_version_service` - controller.controller_version_service",
+                        "default": "controller.controller_version_service"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
                         "readOnly": true,
-                        "description": "When collection (gather) finished"
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ControllerVersionServicePayload"
+                        },
+                        "description": "Distinct versions reported by enabled Controller instances."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerCounts": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.counts"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.counts` - controller.counts",
+                        "default": "controller.counts"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/CountsPayload"
+                            }
+                        ],
+                        "description": "Controller object, inventory, session, job, and database counts."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerCredTypeCounts": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.cred_type_counts"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.cred_type_counts` - controller.cred_type_counts",
+                        "default": "controller.cred_type_counts"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
                     },
                     "payload": {
                         "type": "object",
-                        "additionalProperties": {},
-                        "readOnly": true,
-                        "description": "Raw pre-prepare() gather() output, JSON-serialisable"
+                        "additionalProperties": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/components/schemas/CredentialTypeCountPayload"
+                                }
+                            ],
+                            "nullable": true
+                        },
+                        "description": "Credential counts keyed by credential type ID."
                     }
-                }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerCredentialsService": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.credentials_service"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.credentials_service` - controller.credentials_service",
+                        "default": "controller.credentials_service"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/CredentialsServicePayload"
+                        },
+                        "description": "Managed credential types used by jobs in the collection window."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerEventsTable": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.events_table"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.events_table` - controller.events_table",
+                        "default": "controller.events_table"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/EventsTablePayload"
+                        },
+                        "description": "Raw job events modified in the window, returned by events_table."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerExecutionEnvironments": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.execution_environments"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.execution_environments` - controller.execution_environments",
+                        "default": "controller.execution_environments"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ExecutionEnvironmentsPayload"
+                        },
+                        "description": "Execution environment records."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerFeatureFlagsService": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.feature_flags_service"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.feature_flags_service` - controller.feature_flags_service",
+                        "default": "controller.feature_flags_service"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FeatureFlagsServicePayload"
+                        },
+                        "description": "Enabled boolean platform feature flags."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerHostMetricSummaryMonthlyTable": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.host_metric_summary_monthly_table"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.host_metric_summary_monthly_table` - controller.host_metric_summary_monthly_table",
+                        "default": "controller.host_metric_summary_monthly_table"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/HostMetricSummaryMonthlyTablePayload"
+                        },
+                        "description": "Monthly host capacity and usage summaries."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerInstanceInfo": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.instance_info"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.instance_info` - controller.instance_info",
+                        "default": "controller.instance_info"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/components/schemas/InstanceInfoRecordPayload"
+                                }
+                            ],
+                            "nullable": true
+                        },
+                        "description": "Controller instance topology and consumed capacity keyed by UUID."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerInventoryCounts": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.inventory_counts"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.inventory_counts` - controller.inventory_counts",
+                        "default": "controller.inventory_counts"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/components/schemas/InventoryCountPayload"
+                                }
+                            ],
+                            "nullable": true
+                        },
+                        "description": "Inventory details keyed by inventory ID."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerJobHostSummary": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.job_host_summary"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.job_host_summary` - controller.job_host_summary",
+                        "default": "controller.job_host_summary"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/JobHostSummaryPayload"
+                        },
+                        "description": "Per-job host summary records returned by job_host_summary, filtered by summary modification time."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerJobHostSummaryService": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.job_host_summary_service"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.job_host_summary_service` - controller.job_host_summary_service",
+                        "default": "controller.job_host_summary_service"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/JobHostSummaryServicePayload"
+                        },
+                        "description": "Per-job host summary records returned by job_host_summary_service, filtered by job finish time."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerMainHost": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.main_host"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.main_host` - controller.main_host",
+                        "default": "controller.main_host"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MainHostPayload"
+                        },
+                        "description": "Enabled inventory hosts and selected host facts."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerMainHostDaily": {
+                "type": "object",
+                "properties": {
+                    "payload": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MainHostPayload"
+                        },
+                        "description": "Enabled inventory hosts and selected host facts."
+                    },
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.main_host_daily"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.main_host_daily` - controller.main_host_daily",
+                        "default": "controller.main_host_daily"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerMainHostmetric": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.main_hostmetric"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.main_hostmetric` - controller.main_hostmetric",
+                        "default": "controller.main_hostmetric"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MainHostmetricPayload"
+                        },
+                        "description": "Host automation, deletion, and identity metrics."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerMainIndirectmanagednodeaudit": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.main_indirectmanagednodeaudit"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.main_indirectmanagednodeaudit` - controller.main_indirectmanagednodeaudit",
+                        "default": "controller.main_indirectmanagednodeaudit"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/IndirectManagedNodeAuditPayload"
+                        },
+                        "description": "Indirect managed node audit records for jobs finished in the window."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerMainJobevent": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.main_jobevent"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.main_jobevent` - controller.main_jobevent",
+                        "default": "controller.main_jobevent"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MainJobeventPayload"
+                        },
+                        "description": "Runner events for job hosts whose summaries were modified in the window, returned by main_jobevent."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerMainJobeventService": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.main_jobevent_service"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.main_jobevent_service` - controller.main_jobevent_service",
+                        "default": "controller.main_jobevent_service"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MainJobeventServicePayload"
+                        },
+                        "description": "Selected runner and annotation events for jobs finished in the window, returned by main_jobevent_service."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerOrgCounts": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.org_counts"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.org_counts` - controller.org_counts",
+                        "default": "controller.org_counts"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/components/schemas/OrganizationCountPayload"
+                                }
+                            ],
+                            "nullable": true
+                        },
+                        "description": "Organization user and team counts keyed by organization ID."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerProjectsByScmType": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.projects_by_scm_type"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.projects_by_scm_type` - controller.projects_by_scm_type",
+                        "default": "controller.projects_by_scm_type"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "integer",
+                            "nullable": true
+                        },
+                        "description": "Project counts keyed by source-control type, with manual for projects without one."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerQueryInfo": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.query_info"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.query_info` - controller.query_info",
+                        "default": "controller.query_info"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/QueryInfoPayload"
+                            }
+                        ],
+                        "description": "Collection metadata returned by query_info."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerTableMetadata": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.table_metadata"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.table_metadata` - controller.table_metadata",
+                        "default": "controller.table_metadata"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TableMetadataPayload"
+                        },
+                        "description": "Estimated row counts and relation sizes for selected Controller tables."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerUnifiedJobTemplateTable": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.unified_job_template_table"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.unified_job_template_table` - controller.unified_job_template_table",
+                        "default": "controller.unified_job_template_table"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/UnifiedJobTemplateTablePayload"
+                        },
+                        "description": "Unified job template identity, scheduling, and status records."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerUnifiedJobs": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.unified_jobs"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.unified_jobs` - controller.unified_jobs",
+                        "default": "controller.unified_jobs"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/UnifiedJobsPayload"
+                        },
+                        "description": "Unified job records returned by unified_jobs, filtered by job finish time."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerUnifiedJobsDashboard": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.unified_jobs_dashboard"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.unified_jobs_dashboard` - controller.unified_jobs_dashboard",
+                        "default": "controller.unified_jobs_dashboard"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/UnifiedJobsDashboardPayload"
+                        },
+                        "description": "Job execution records returned by unified_jobs_dashboard, filtered by job finish time."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerWorkflowJobNodeTable": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.workflow_job_node_table"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.workflow_job_node_table` - controller.workflow_job_node_table",
+                        "default": "controller.workflow_job_node_table"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/WorkflowJobNodeTablePayload"
+                        },
+                        "description": "Workflow job node executions and their edge relationships."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
+            },
+            "AnalyticsPayloadControllerWorkflowJobTemplateNodeTable": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "collector": {
+                        "enum": [
+                            "controller.workflow_job_template_node_table"
+                        ],
+                        "type": "string",
+                        "description": "* `controller.workflow_job_template_node_table` - controller.workflow_job_template_node_table",
+                        "default": "controller.workflow_job_template_node_table"
+                    },
+                    "source": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "cluster_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Controller installation UUID (INSTALL_UUID), or null if unavailable."
+                    },
+                    "since": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "payload": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/WorkflowJobTemplateNodeTablePayload"
+                        },
+                        "description": "Workflow job template node definitions and edge relationships."
+                    }
+                },
+                "required": [
+                    "payload"
+                ]
             },
             "AnalyticsRootResponse": {
                 "type": "object",
@@ -12050,6 +13787,31 @@
                     "daily",
                     "streak"
                 ]
+            },
+            "CanonicalFactsPayload": {
+                "type": "object",
+                "properties": {
+                    "ansible_product_serial": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "ansible_machine_id": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "ansible_host": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "host_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "ansible_port": {
+                        "type": "integer",
+                        "nullable": true
+                    }
+                }
             },
             "ChartDataItem": {
                 "type": "object",
@@ -12118,6 +13880,301 @@
                         "type": "string",
                         "format": "uri",
                         "readOnly": true
+                    }
+                }
+            },
+            "ConfigPayload": {
+                "type": "object",
+                "properties": {
+                    "authentication_backends": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "nullable": true
+                        },
+                        "nullable": true
+                    },
+                    "controller_url_base": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "external_logger_enabled": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "external_logger_type": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "install_uuid": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "instance_uuid": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "logging_aggregators": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "nullable": true
+                        },
+                        "nullable": true
+                    },
+                    "pendo_tracking": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "subscription_usage_model": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "account_number": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "automated_instances": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "automated_since": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Unix timestamp of the first automation."
+                    },
+                    "compliant": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "current_instances": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "date_expired": {
+                        "type": "boolean",
+                        "nullable": true,
+                        "description": "Whether the subscription has expired."
+                    },
+                    "date_warning": {
+                        "type": "boolean",
+                        "nullable": true,
+                        "description": "Whether the subscription is close to expiring."
+                    },
+                    "free_instances": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "grace_period_remaining": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Seconds of grace period remaining."
+                    },
+                    "license_date": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Unix timestamp when the subscription ends."
+                    },
+                    "license_expiry": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Seconds until the subscription ends."
+                    },
+                    "license_type": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "pool_id": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "product_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "satellite": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "sku": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "subscription_id": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "subscription_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "support_level": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "total_licensed_instances": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "trial": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "usage": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Subscription usage, for example Production or Development."
+                    },
+                    "valid_key": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "billing_provider_params": {
+                        "type": "object",
+                        "additionalProperties": {},
+                        "nullable": true,
+                        "description": "Billing provider metadata supplied by the collection environment; keys depend on the provider."
+                    },
+                    "controller_version": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "metrics_utility_version": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "platform": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/PlatformPayload"
+                            }
+                        ],
+                        "nullable": true
+                    }
+                }
+            },
+            "ControllerVersionServicePayload": {
+                "type": "object",
+                "properties": {
+                    "controller_version": {
+                        "type": "string"
+                    }
+                }
+            },
+            "CountsPayload": {
+                "type": "object",
+                "properties": {
+                    "organization": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "team": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "user": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "inventory": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "credential": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "project": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "job_template": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "workflow_job_template": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "host": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "schedule": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "notification_template": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "inventories": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "integer",
+                            "nullable": true
+                        },
+                        "nullable": true,
+                        "description": "Inventory counts keyed by inventory kind; always includes normal and smart."
+                    },
+                    "unified_job": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Unified jobs, excluding project syncs."
+                    },
+                    "active_host_count": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "active_sessions": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "active_user_sessions": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "active_anonymous_sessions": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "running_jobs": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "pending_jobs": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "database_connections": {
+                        "type": "integer",
+                        "nullable": true
+                    }
+                }
+            },
+            "CredentialTypeCountPayload": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "credential_count": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "managed": {
+                        "type": "boolean",
+                        "nullable": true
+                    }
+                }
+            },
+            "CredentialsServicePayload": {
+                "type": "object",
+                "properties": {
+                    "credential_type": {
+                        "type": "string",
+                        "description": "Managed credential type name."
                     }
                 }
             },
@@ -12466,6 +14523,29 @@
                     "warning"
                 ]
             },
+            "DeprecationPayload": {
+                "type": "object",
+                "properties": {
+                    "msg": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "version": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Version in which the deprecated feature is removed."
+                    },
+                    "date": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Date after which the deprecated feature is removed."
+                    },
+                    "collection_name": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                }
+            },
             "Entry": {
                 "type": "object",
                 "properties": {
@@ -12584,6 +14664,248 @@
                     "timestamp"
                 ]
             },
+            "EventsTablePayload": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Job event identifier"
+                    },
+                    "created": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "modified": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "job_created": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true,
+                        "description": "Creation time of the event's job; the job event partition key."
+                    },
+                    "uuid": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "parent_uuid": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "event": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Ansible callback event name, for example runner_on_ok."
+                    },
+                    "task_action": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Module or action name as written in the task."
+                    },
+                    "resolved_action": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Fully-qualified module or action name resolved by Ansible."
+                    },
+                    "collection_name": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Collection namespace.name parsed from resolved_action, when it is a FQCN."
+                    },
+                    "collection_version": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Version of collection_name installed for the job, when known."
+                    },
+                    "resolved_role": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "playbook_on_stats": {
+                        "type": "object",
+                        "additionalProperties": {},
+                        "nullable": true,
+                        "description": "Event data of playbook_on_stats events (per-host result counts), without artifact_data; null for other events."
+                    },
+                    "failed": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "changed": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "playbook": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "play": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "task": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "role": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "job_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "host_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "host_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "start": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "end": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "duration": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Task duration in seconds, as recorded in the event data."
+                    },
+                    "warnings": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "nullable": true
+                        },
+                        "nullable": true,
+                        "description": "Warnings reported in the task result."
+                    },
+                    "deprecations": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/DeprecationPayload"
+                        },
+                        "nullable": true,
+                        "description": "Deprecations reported in the task result."
+                    }
+                }
+            },
+            "ExecutionEnvironmentsPayload": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Execution environment identifier"
+                    },
+                    "created": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "modified": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "description": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "image": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "managed": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "created_by_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "credential_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "modified_by_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "organization_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "pull": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Image pull policy."
+                    }
+                }
+            },
+            "FactsPayload": {
+                "type": "object",
+                "properties": {
+                    "ansible_connection_variable": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "ansible_virtualization_type": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "ansible_virtualization_role": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "ansible_system_vendor": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "ansible_product_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "ansible_architecture": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "ansible_processor": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Processor facts as JSON text."
+                    },
+                    "ansible_form_factor": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "ansible_bios_vendor": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "ansible_bios_version": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "ansible_board_serial": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                }
+            },
             "FeatureFlagStates": {
                 "type": "object",
                 "description": "Serialize list of feature flags",
@@ -12601,6 +14923,38 @@
                 "required": [
                     "name"
                 ]
+            },
+            "FeatureFlagsServicePayload": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "condition": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "value": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "description": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "support_level": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "toggle_type": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "visibility": {
+                        "type": "boolean",
+                        "nullable": true
+                    }
+                }
             },
             "FeaturedTemplate": {
                 "type": "object",
@@ -12730,6 +15084,874 @@
                     "status"
                 ]
             },
+            "HostMetricSummaryMonthlyTablePayload": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "date": {
+                        "type": "string",
+                        "format": "date",
+                        "nullable": true,
+                        "description": "First day of the summarized month."
+                    },
+                    "license_capacity": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "license_consumed": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "hosts_added": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "hosts_deleted": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "indirectly_managed_hosts": {
+                        "type": "integer",
+                        "nullable": true
+                    }
+                }
+            },
+            "IndirectManagedNodeAuditPayload": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Audit record identifier"
+                    },
+                    "created": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "host_name": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Ansible name of the indirectly managed node."
+                    },
+                    "host_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller host ID, when the node matches an inventory host."
+                    },
+                    "canonical_facts": {
+                        "type": "object",
+                        "additionalProperties": {},
+                        "nullable": true,
+                        "description": "Facts used for managed node deduplication; keys depend on the query."
+                    },
+                    "facts": {
+                        "type": "object",
+                        "additionalProperties": {},
+                        "nullable": true,
+                        "description": "Additional non-canonical facts about the managed node."
+                    },
+                    "events": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "nullable": true
+                        },
+                        "nullable": true,
+                        "description": "Fully-qualified names of modules that ran against the node."
+                    },
+                    "task_runs": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "How many times registered modules were invoked on the node."
+                    },
+                    "job_created": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "job_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller job ID."
+                    },
+                    "job_template_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller unified job template ID."
+                    },
+                    "job_template_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "inventory_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller inventory ID."
+                    },
+                    "inventory_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "organization_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller organization ID."
+                    },
+                    "organization_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "project_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller project ID."
+                    },
+                    "project_name": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                }
+            },
+            "InstalledCollectionPayload": {
+                "type": "object",
+                "properties": {
+                    "version": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                }
+            },
+            "InstanceInfoRecordPayload": {
+                "type": "object",
+                "properties": {
+                    "uuid": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "version": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "capacity": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "cpu": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "CPU count, as a decimal string (for example \"1.0\")."
+                    },
+                    "memory": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Memory in bytes."
+                    },
+                    "managed_by_policy": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "enabled": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "consumed_capacity": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Capacity used by running and waiting jobs."
+                    },
+                    "remaining_capacity": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "node_type": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                }
+            },
+            "InventoryCountPayload": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "kind": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Empty for normal inventories, smart for smart inventories."
+                    },
+                    "hosts": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "sources": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "source_list": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SourcePayload"
+                        },
+                        "nullable": true
+                    }
+                }
+            },
+            "JobHostSummaryPayload": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Job host summary identifier"
+                    },
+                    "created": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "modified": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "host_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "host_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller host ID."
+                    },
+                    "ansible_host_variable": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "ansible_host value from the host variables."
+                    },
+                    "ansible_connection_variable": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "ansible_connection value from the host variables."
+                    },
+                    "changed": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Number of tasks that reported changes on the host."
+                    },
+                    "dark": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Number of tasks for which the host was unreachable."
+                    },
+                    "failures": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Number of failed tasks on the host."
+                    },
+                    "ok": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Number of successful tasks on the host."
+                    },
+                    "processed": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "skipped": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Number of skipped tasks on the host."
+                    },
+                    "failed": {
+                        "type": "boolean",
+                        "nullable": true,
+                        "description": "Whether the host failed in the job."
+                    },
+                    "ignored": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Number of failed tasks ignored on the host."
+                    },
+                    "rescued": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Number of failed tasks rescued on the host."
+                    },
+                    "job_created": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "job_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller job ID."
+                    },
+                    "job_template_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller unified job template ID."
+                    },
+                    "job_template_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "inventory_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller inventory ID."
+                    },
+                    "inventory_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "organization_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller organization ID."
+                    },
+                    "organization_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "project_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller project ID."
+                    },
+                    "project_name": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                }
+            },
+            "JobHostSummaryServicePayload": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Job host summary identifier"
+                    },
+                    "created": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "modified": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "host_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "host_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller host ID."
+                    },
+                    "changed": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Number of tasks that reported changes on the host."
+                    },
+                    "dark": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Number of tasks for which the host was unreachable."
+                    },
+                    "failures": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Number of failed tasks on the host."
+                    },
+                    "ok": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Number of successful tasks on the host."
+                    },
+                    "processed": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "skipped": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Number of skipped tasks on the host."
+                    },
+                    "failed": {
+                        "type": "boolean",
+                        "nullable": true,
+                        "description": "Whether the host failed in the job."
+                    },
+                    "ignored": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Number of failed tasks ignored on the host."
+                    },
+                    "rescued": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Number of failed tasks rescued on the host."
+                    },
+                    "job_created": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "job_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller job ID."
+                    },
+                    "job_template_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller unified job template ID."
+                    },
+                    "job_template_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "ansible_version": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "launch_type": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "inventory_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller inventory ID."
+                    },
+                    "inventory_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "organization_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller organization ID."
+                    },
+                    "organization_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "project_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller project ID."
+                    },
+                    "project_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "model": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Concrete job type of the related job."
+                    }
+                }
+            },
+            "MainHostPayload": {
+                "type": "object",
+                "properties": {
+                    "host_name": {
+                        "type": "string"
+                    },
+                    "host_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "inventory_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller inventory ID."
+                    },
+                    "inventory_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "organization_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller organization ID."
+                    },
+                    "organization_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "last_automation": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true,
+                        "description": "Creation time of the host's most recent job."
+                    },
+                    "ansible_host_variable": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "ansible_host value from the host variables."
+                    },
+                    "canonical_facts": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/CanonicalFactsPayload"
+                            }
+                        ],
+                        "nullable": true,
+                        "description": "Host identity facts used for deduplication."
+                    },
+                    "facts": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/FactsPayload"
+                            }
+                        ],
+                        "nullable": true,
+                        "description": "Selected hardware and system facts."
+                    }
+                }
+            },
+            "MainHostmetricPayload": {
+                "type": "object",
+                "properties": {
+                    "hostname": {
+                        "type": "string"
+                    },
+                    "host_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Matching inventory host ID, or 0 when the host no longer exists."
+                    },
+                    "first_automation": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "last_automation": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "automated_counter": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "deleted_counter": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "last_deleted": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "deleted": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Host metric identifier"
+                    },
+                    "used_in_inventories": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "ansible_product_serial": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "ansible_machine_id": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "ansible_host_variable": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "ansible_connection_variable": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                }
+            },
+            "MainJobeventPayload": {
+                "type": "object",
+                "properties": {
+                    "main_jobhostsummary_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Job host summary that selected this event."
+                    },
+                    "main_jobhostsummary_created": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "id": {
+                        "type": "integer",
+                        "description": "Job event identifier"
+                    },
+                    "created": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "modified": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "job_created": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true,
+                        "description": "Creation time of the event's job; the job event partition key."
+                    },
+                    "event": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Ansible callback event name, for example runner_on_ok."
+                    },
+                    "task_action": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Module or action name as written in the task."
+                    },
+                    "resolved_action": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Fully-qualified module or action name resolved by Ansible."
+                    },
+                    "resolved_role": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "duration": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Task duration in seconds, as recorded in the event data."
+                    },
+                    "failed": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "changed": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "playbook": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "play": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "task": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "role": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "job_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller job ID."
+                    },
+                    "host_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller host ID."
+                    },
+                    "host_name": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                }
+            },
+            "MainJobeventServicePayload": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Job event identifier"
+                    },
+                    "created": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "modified": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "job_created": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true,
+                        "description": "Creation time of the event's job; the job event partition key."
+                    },
+                    "job_finished": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "ansible_version": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "uuid": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "parent_uuid": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "event": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Ansible callback event name, for example runner_on_ok."
+                    },
+                    "task_action": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Module or action name as written in the task."
+                    },
+                    "resolved_action": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Fully-qualified module or action name resolved by Ansible."
+                    },
+                    "collection_name": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Collection namespace.name parsed from resolved_action, when it is a FQCN."
+                    },
+                    "collection_version": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Version of collection_name installed for the job, when known."
+                    },
+                    "resolved_role": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "duration": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Task duration in seconds, as recorded in the event data."
+                    },
+                    "start": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "end": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "task_uuid": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "ignore_errors": {
+                        "type": "boolean",
+                        "nullable": true,
+                        "description": "Whether the failed task had ignore_errors set; false when unknown."
+                    },
+                    "failed": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "changed": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "playbook": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "play": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "task": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "role": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "job_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller job ID."
+                    },
+                    "job_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "host_remote_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Controller host ID."
+                    },
+                    "host_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "host_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "warnings": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "nullable": true
+                        },
+                        "nullable": true,
+                        "description": "Warnings reported in the task result."
+                    },
+                    "deprecations": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/DeprecationPayload"
+                        },
+                        "nullable": true,
+                        "description": "Deprecations reported in the task result."
+                    },
+                    "event_data_length": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Stored size of the raw event data, in bytes."
+                    },
+                    "job_failed": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "job_started": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    }
+                }
+            },
             "OrgStreak": {
                 "type": "object",
                 "description": "Automation streak for the current user's busiest organization in the window.",
@@ -12842,6 +16064,23 @@
                     "name"
                 ]
             },
+            "OrganizationCountPayload": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "users": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "teams": {
+                        "type": "integer",
+                        "nullable": true
+                    }
+                }
+            },
             "OrganizationLeaderboard": {
                 "type": "object",
                 "description": "Top 10 organizations by successful runs, plus the user's org standing.",
@@ -12934,34 +16173,33 @@
             },
             "PaginatedAnalyticsPayloadList": {
                 "type": "object",
-                "required": [
-                    "count",
-                    "results"
-                ],
                 "properties": {
                     "count": {
-                        "type": "integer",
-                        "example": 123
+                        "type": "integer"
                     },
                     "next": {
                         "type": "string",
-                        "nullable": true,
                         "format": "uri",
-                        "example": "http://api.example.org/accounts/?page=4"
+                        "nullable": true
                     },
                     "previous": {
                         "type": "string",
-                        "nullable": true,
                         "format": "uri",
-                        "example": "http://api.example.org/accounts/?page=2"
+                        "nullable": true
                     },
                     "results": {
                         "type": "array",
                         "items": {
-                            "$ref": "#/components/schemas/AnalyticsPayload"
+                            "$ref": "#/components/schemas/AnalyticsPayloadByCollector"
                         }
                     }
-                }
+                },
+                "required": [
+                    "count",
+                    "next",
+                    "previous",
+                    "results"
+                ]
             },
             "PaginatedDABContentTypeList": {
                 "type": "object",
@@ -13910,6 +17148,52 @@
                     "ping"
                 ]
             },
+            "PlatformPayload": {
+                "type": "object",
+                "properties": {
+                    "dist": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "nullable": true
+                        },
+                        "nullable": true,
+                        "description": "Linux distribution name, version, and codename."
+                    },
+                    "release": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "system": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "type": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Install type: openshift, k8s, or traditional."
+                    }
+                }
+            },
+            "QueryInfoPayload": {
+                "type": "object",
+                "properties": {
+                    "last_run": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "String representation of the requested start bound (\"None\" when unbounded)."
+                    },
+                    "current_time": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "String representation of the requested end bound (\"None\" when unbounded)."
+                    },
+                    "collection_type": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                }
+            },
             "Report": {
                 "type": "object",
                 "description": "Serializer for per-template aggregated report rows.\n\nEach row represents a single job template with aggregated run counts, elapsed\ntime, cost estimates, and savings calculations across the selected date range.",
@@ -14846,6 +18130,23 @@
                     "user_ansible_id"
                 ]
             },
+            "SourcePayload": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "source": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "num_hosts": {
+                        "type": "integer",
+                        "nullable": true
+                    }
+                }
+            },
             "StreakDay": {
                 "type": "object",
                 "description": "One UTC calendar day of the automation streak series.",
@@ -14911,6 +18212,35 @@
                     "include_template_creation_time_in_costs": {
                         "type": "boolean",
                         "description": "Include template creation time in cost calculations. If false, costs related to template creation time will be excluded."
+                    }
+                }
+            },
+            "TableMetadataPayload": {
+                "type": "object",
+                "properties": {
+                    "schemaname": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "tablename": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "estimated_row_count": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "total_size_bytes": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "table_size_bytes": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "indexes_size_bytes": {
+                        "type": "integer",
+                        "nullable": true
                     }
                 }
             },
@@ -15755,6 +19085,383 @@
                     }
                 }
             },
+            "UnifiedJobTemplateTablePayload": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "polymorphic_ctype_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "model": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Concrete template type, for example job_template or project."
+                    },
+                    "execution_environment_image": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "created": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "modified": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "created_by_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "modified_by_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "current_job_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "last_job_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "last_job_failed": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "last_job_run": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "next_job_run": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "next_schedule_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "status": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                }
+            },
+            "UnifiedJobsDashboardPayload": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Unified job identifier"
+                    },
+                    "polymorphic_ctype_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Django content type ID of the concrete job type."
+                    },
+                    "model": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Concrete job type, for example job, project_update, or workflow_job."
+                    },
+                    "organization_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "organization_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "execution_environment_image": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "inventory_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "inventory_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "execution_environment_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "created": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "modified": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "unified_job_template_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "launch_type": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "How the job was launched, for example manual, relaunch, scheduled, or workflow."
+                    },
+                    "schedule_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "execution_node": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "controller_node": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "cancel_flag": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "status": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "failed": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "started": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "finished": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "elapsed": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Job run time in seconds, as a decimal string (for example \"120.000\")."
+                    },
+                    "job_explanation": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "instance_group_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "installed_collections": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/components/schemas/InstalledCollectionPayload"
+                                }
+                            ],
+                            "nullable": true
+                        },
+                        "nullable": true,
+                        "description": "Ansible collections installed in the job's execution environment, keyed by collection FQCN."
+                    },
+                    "ansible_version": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "forks": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "job_template_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "scm_type": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Source-control type of the job's project."
+                    },
+                    "project_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "project_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "launched_by_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "User ID that launched the job; null unless launch_type is manual or relaunch."
+                    },
+                    "label_ids": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Comma-separated label IDs."
+                    },
+                    "num_hosts": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Number of job host summaries recorded for the job."
+                    }
+                }
+            },
+            "UnifiedJobsPayload": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Unified job identifier"
+                    },
+                    "polymorphic_ctype_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Django content type ID of the concrete job type."
+                    },
+                    "model": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Concrete job type, for example job, project_update, or workflow_job."
+                    },
+                    "organization_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "organization_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "execution_environment_image": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "inventory_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "inventory_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "execution_environment_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "created": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "unified_job_template_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "launch_type": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "How the job was launched, for example manual, relaunch, scheduled, or workflow."
+                    },
+                    "schedule_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "execution_node": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "controller_node": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "cancel_flag": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "status": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "failed": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "started": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "finished": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "elapsed": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Job run time in seconds, as a decimal string (for example \"120.000\")."
+                    },
+                    "job_explanation": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "instance_group_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "installed_collections": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/components/schemas/InstalledCollectionPayload"
+                                }
+                            ],
+                            "nullable": true
+                        },
+                        "nullable": true,
+                        "description": "Ansible collections installed in the job's execution environment, keyed by collection FQCN."
+                    },
+                    "ansible_version": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "forks": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "job_template_name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "scm_type": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Source-control type of the job's project."
+                    }
+                }
+            },
             "User": {
                 "type": "object",
                 "description": "Serializer for the User model, handling password hashing on create and update.",
@@ -16100,6 +19807,139 @@
                 "required": [
                     "username"
                 ]
+            },
+            "WorkflowJobNodeTablePayload": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Workflow job node identifier"
+                    },
+                    "created": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "modified": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "job_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Unified job spawned by this node."
+                    },
+                    "unified_job_template_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "workflow_job_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "inventory_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "success_nodes": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "nullable": true
+                        },
+                        "nullable": true,
+                        "description": "Nodes run when this node succeeds."
+                    },
+                    "failure_nodes": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "nullable": true
+                        },
+                        "nullable": true,
+                        "description": "Nodes run when this node fails."
+                    },
+                    "always_nodes": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "nullable": true
+                        },
+                        "nullable": true,
+                        "description": "Nodes run regardless of this node's result."
+                    },
+                    "do_not_run": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "all_parents_must_converge": {
+                        "type": "boolean",
+                        "nullable": true
+                    }
+                }
+            },
+            "WorkflowJobTemplateNodeTablePayload": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Workflow job template node identifier"
+                    },
+                    "created": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "modified": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "unified_job_template_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "workflow_job_template_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "inventory_id": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "success_nodes": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "nullable": true
+                        },
+                        "nullable": true,
+                        "description": "Nodes run when this node succeeds."
+                    },
+                    "failure_nodes": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "nullable": true
+                        },
+                        "nullable": true,
+                        "description": "Nodes run when this node fails."
+                    },
+                    "always_nodes": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "nullable": true
+                        },
+                        "nullable": true,
+                        "description": "Nodes run regardless of this node's result."
+                    },
+                    "all_parents_must_converge": {
+                        "type": "boolean",
+                        "nullable": true
+                    }
+                }
             }
         },
         "securitySchemes": {

@@ -20,10 +20,26 @@ The registry is the source of truth in
 - `database`: source database, defaulting to `awx`
 - `description`: customer-facing summary of the data returned by the collector
 - `note`: explanation for not-enabled entries or a relevant caveat
+- `payload_schema`: typed OpenAPI shape for the raw collector output, defined in
+  [`apps/analytics/payload_schemas.py`](../apps/analytics/payload_schemas.py);
+  required for enabled entries
 
 `accepts_since_until` is derived from `mode`. It describes whether the collector
 can receive `since` and `until` bounds; it does not require both bounds to be
 present.
+
+The `payload_schema` association is also registry-driven. The rows operation
+keeps the collection envelope and uses `collector` as an OpenAPI discriminator;
+each enabled registry entry maps to an envelope component whose `payload` field
+documents the collector's actual output fields and types. DataFrame collectors
+are documented as arrays of records. Dictionary collectors use a fixed object
+schema when their keys are known, or an object with typed `additionalProperties`
+when the collector keys are dynamic (for example, IDs or SCM types). This keeps
+the raw payload contract honest without flattening it into API rows.
+
+Payload schemas mirror the metrics-utility collector SQL, so a collector change in
+metrics-utility (added, removed, or retyped columns) needs a matching schema update
+here, followed by `bash tools/generate-openapi.sh`.
 
 ## Enabled Collectors
 
@@ -133,6 +149,11 @@ GET /api/v1/analytics/controller.unified_jobs_dashboard/
 The actual list response includes `count`, `next`, `previous`, and `results`.
 Use `page` and `page_size` for pagination. `count_disabled=true` can omit the
 count and navigation links when supported by the paginator.
+
+The generated Swagger/OpenAPI document contains the same collector-specific
+components under `components.schemas`. `since` is an inclusive bound and
+`until` is an exclusive bound; both are nullable at the envelope level because
+snapshot collectors and open-ended collection windows store null bounds.
 
 ### Window Filters
 
