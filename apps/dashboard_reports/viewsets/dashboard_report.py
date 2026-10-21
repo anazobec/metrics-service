@@ -881,8 +881,8 @@ class DashboardReportViewSet(ReadOnlyModelViewSet):
 
         ### Unique hosts count ###
         # Use a stable surrogate key that prefers host_id (cast to text) when present and
-        # falls back to host_name — matching JobHostSummary.unique_count() — so that two
-        # hosts sharing a name aren't collapsed into one, and a renamed host isn't double-counted.
+        # falls back to host_name, so that two hosts sharing a name aren't collapsed into one,
+        # and a renamed host isn't double-counted.
         unique_hosts_count = (
             JobHostSummary.objects.filter(job_data__in=filtered_qs)
             .annotate(

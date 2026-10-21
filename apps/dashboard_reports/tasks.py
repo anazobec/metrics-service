@@ -138,7 +138,7 @@ def _sync_jobs_atomically(job_results: list) -> list:
     Persist all jobs in a single atomic transaction.
 
     Returns the list of job IDs that failed to sync.  If any job fails every
-    save made in this call is rolled back, keeping JobData.last_timestamp()
+    save made in this call is rolled back, keeping JobData.last_finished_timestamp()
     unchanged so the next incremental run retries from the same watermark.
 
 

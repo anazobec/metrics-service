@@ -6,13 +6,13 @@ coverage above 80%.  Covers:
   - _get_month_overlap_days helper
   - CommonModel fallback (DAB unavailable path)
   - SubscriptionCostObjectManager.create (singleton upsert)
-  - SubscriptionCost.__str__, daily_subscription_cost multi-month, per_second_subscription_cost
+  - SubscriptionCost.__str__, per_second_subscription_cost
   - TemplateMetadata._lookup_by_id, _lookup_or_create_by_name (all branches),
     _create_with_race_handling (happy path + IntegrityError recovery),
     _apply_time_estimate_defaults
-  - JobData.__str__, last_timestamp (with records), create_or_update_from_awx
+  - JobData.__str__, create_or_update_from_awx
     (create path + update path), _sync_labels, _sync_host_summaries
-  - JobLabel.__str__, JobHostSummary.__str__, JobHostSummary.unique_count
+  - JobLabel.__str__, JobHostSummary.__str__
   - label_ids_to_job_data_ids utility
   - JobDataFilterMethods: organizations, templates, projects, labels with real IDs
 """
@@ -174,92 +174,6 @@ def test_subscription_cost_get_returns_existing():
     cost = SubscriptionCost.get()
     assert cost.monthly_subscription_cost == decimal.Decimal("9999.00")
     assert SubscriptionCost.objects.count() == 1
-
-
-@pytest.mark.unit
-@pytest.mark.django_db
-def test_daily_subscription_cost_no_args():
-    """daily_subscription_cost with no args returns the default monthly/days value."""
-    from apps.dashboard_reports.models import SubscriptionCost
-
-    SubscriptionCost.objects.all().delete()
-    cost = SubscriptionCost.get()
-    daily = cost.daily_subscription_cost()
-    assert isinstance(daily, decimal.Decimal)
-    assert daily > 0
-
-
-@pytest.mark.unit
-@pytest.mark.django_db
-def test_daily_subscription_cost_reversed_start_end():
-    """When start > end, dates are swapped before calculation."""
-    from apps.dashboard_reports.models import SubscriptionCost
-
-    SubscriptionCost.objects.all().delete()
-    cost = SubscriptionCost.get()
-    start = datetime(2024, 1, 31, tzinfo=UTC)
-    end = datetime(2024, 1, 1, tzinfo=UTC)
-    # Should not raise, and should produce valid decimal
-    daily = cost.daily_subscription_cost(start=start, end=end)
-    assert isinstance(daily, decimal.Decimal)
-    assert daily > 0
-
-
-@pytest.mark.unit
-@pytest.mark.django_db
-def test_daily_subscription_cost_same_month():
-    """start and end in same month: cost is monthly / days_in_month."""
-    import calendar
-
-    from apps.dashboard_reports.models import SubscriptionCost
-
-    SubscriptionCost.objects.all().delete()
-    cost = SubscriptionCost.objects.create(
-        monthly_subscription_cost=decimal.Decimal("3100.00"),
-        engineer_avg_hourly_rate=decimal.Decimal("60.00"),
-    )
-    start = datetime(2024, 1, 1, tzinfo=UTC)
-    end = datetime(2024, 1, 31, tzinfo=UTC)
-    daily = cost.daily_subscription_cost(start=start, end=end)
-    days = calendar.monthrange(2024, 1)[1]
-    expected = decimal.Decimal("3100.00") / decimal.Decimal(days)
-    assert abs(daily - expected) < decimal.Decimal("0.01")
-
-
-@pytest.mark.unit
-@pytest.mark.django_db
-def test_daily_subscription_cost_multi_month():
-    """Multi-month date range iterates correctly and returns a weighted daily cost."""
-    from apps.dashboard_reports.models import SubscriptionCost
-
-    SubscriptionCost.objects.all().delete()
-    cost = SubscriptionCost.objects.create(
-        monthly_subscription_cost=decimal.Decimal("3000.00"),
-        engineer_avg_hourly_rate=decimal.Decimal("60.00"),
-    )
-    start = datetime(2024, 1, 15, tzinfo=UTC)
-    end = datetime(2024, 3, 15, tzinfo=UTC)
-    daily = cost.daily_subscription_cost(start=start, end=end)
-    assert isinstance(daily, decimal.Decimal)
-    assert daily > 0
-
-
-@pytest.mark.unit
-@pytest.mark.django_db
-def test_daily_subscription_cost_year_boundary():
-    """Multi-month spanning a year boundary (Dec -> Jan) works correctly."""
-    from apps.dashboard_reports.models import SubscriptionCost
-
-    SubscriptionCost.objects.all().delete()
-    cost = SubscriptionCost.objects.create(
-        monthly_subscription_cost=decimal.Decimal("6000.00"),
-        engineer_avg_hourly_rate=decimal.Decimal("60.00"),
-    )
-    start = datetime(2023, 12, 1, tzinfo=UTC)
-    end = datetime(2024, 2, 28, tzinfo=UTC)
-    daily = cost.daily_subscription_cost(start=start, end=end)
-    assert isinstance(daily, decimal.Decimal)
-    assert daily > 0
 
 
 @pytest.mark.unit
@@ -518,7 +432,7 @@ def test_apply_time_estimate_defaults_capped_at_maximum():
 
 
 # ---------------------------------------------------------------------------
-# JobData.__str__ and last_timestamp
+# JobData.__str__
 # ---------------------------------------------------------------------------
 
 
@@ -534,20 +448,6 @@ def test_job_data_str():
     s = str(job)
     assert "5001" in s
     assert "str-tmpl" in s
-
-
-@pytest.mark.unit
-@pytest.mark.django_db
-def test_job_data_last_timestamp_with_records():
-    """last_timestamp() returns the max awx_modified from JobData records."""
-    from apps.dashboard_reports.models import JobData
-
-    JobData.objects.filter(job_id__in=[6001, 6002]).delete()
-    JobData.create_or_update_from_awx(_make_awx_job(job_id=6001, template_id=600))
-    now = datetime.now(tz=UTC)
-    JobData.create_or_update_from_awx(_make_awx_job(job_id=6002, template_id=601, modified=now))
-    ts = JobData.last_timestamp()
-    assert ts is not None
 
 
 # ---------------------------------------------------------------------------
@@ -857,115 +757,3 @@ def test_filter_methods_labels_with_ids():
     assert qs.filter(job_id=10004).exists()
     qs_none = JobData.objects.labels([9999])
     assert not qs_none.filter(job_id=10004).exists()
-
-
-# ---------------------------------------------------------------------------
-# JobHostSummary.unique_count
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-@pytest.mark.django_db
-def test_unique_count_basic():
-    """unique_count returns distinct host count."""
-    from apps.dashboard_reports.models import JobData, JobHostSummary, TemplateMetadata
-
-    TemplateMetadata.objects.filter(template_id=1100).delete()
-    JobData.objects.filter(job_id=11001).delete()
-    hs = [
-        {"id": 5001, "host_id": 601, "host_name": "host-1"},
-        {"id": 5002, "host_id": 602, "host_name": "host-2"},
-    ]
-    JobData.create_or_update_from_awx(
-        _make_awx_job(job_id=11001, template_id=1100, template_name="uc-basic", host_summaries=hs)
-    )
-    count = JobHostSummary.unique_count()
-    assert count >= 2
-
-
-@pytest.mark.unit
-@pytest.mark.django_db
-def test_unique_count_deduplicates_by_host_id():
-    """Same host_id across two jobs is counted only once."""
-    from apps.dashboard_reports.models import JobData, JobHostSummary, TemplateMetadata
-
-    TemplateMetadata.objects.filter(template_id__in=[1101, 1102]).delete()
-    JobData.objects.filter(job_id__in=[11010, 11011]).delete()
-    now = datetime.now(tz=UTC)
-    hs_shared = [{"id": 6001, "host_id": 700, "host_name": "shared-host"}]
-    hs_other = [{"id": 6002, "host_id": 700, "host_name": "shared-host"}]
-    JobData.create_or_update_from_awx(
-        _make_awx_job(
-            job_id=11010, template_id=1101, template_name="uc-dedup-a", host_summaries=hs_shared, finished=now
-        )
-    )
-    JobData.create_or_update_from_awx(
-        _make_awx_job(job_id=11011, template_id=1102, template_name="uc-dedup-b", host_summaries=hs_other, finished=now)
-    )
-    count = JobHostSummary.unique_count(
-        start=now - timedelta(minutes=1),
-        end=now + timedelta(minutes=1),
-    )
-    # host_id=700 appears in both jobs but should count as one unique host
-    assert count >= 1
-
-
-@pytest.mark.unit
-@pytest.mark.django_db
-def test_unique_count_fallback_to_host_name():
-    """Host with no host_id uses host_name as surrogate."""
-    from apps.dashboard_reports.models import JobData, JobHostSummary, TemplateMetadata
-
-    TemplateMetadata.objects.filter(template_id=1103).delete()
-    JobData.objects.filter(job_id=11012).delete()
-    hs = [{"id": 7001, "host_id": None, "host_name": "name-only-host"}]
-    JobData.create_or_update_from_awx(
-        _make_awx_job(job_id=11012, template_id=1103, template_name="uc-nohost", host_summaries=hs)
-    )
-    count = JobHostSummary.unique_count()
-    assert count >= 1
-
-
-@pytest.mark.unit
-@pytest.mark.django_db
-def test_unique_count_with_filter_options():
-    """unique_count respects organization/project/template filter options."""
-    from apps.dashboard_reports.models import JobData, JobHostSummary, TemplateMetadata
-
-    TemplateMetadata.objects.filter(template_id=1104).delete()
-    JobData.objects.filter(job_id=11013).delete()
-    hs = [{"id": 8001, "host_id": 800, "host_name": "filtered-host"}]
-    JobData.create_or_update_from_awx(
-        _make_awx_job(job_id=11013, template_id=1104, template_name="uc-filtered", host_summaries=hs)
-    )
-    count = JobHostSummary.unique_count(options={"organization": [10], "project": [20], "template": [1104]})
-    assert count >= 1
-
-    # Non-matching org returns 0
-    count_none = JobHostSummary.unique_count(options={"organization": [9999]})
-    assert count_none == 0
-
-
-@pytest.mark.unit
-@pytest.mark.django_db
-def test_unique_count_with_label_filter():
-    """unique_count respects label filter option (subquery path)."""
-    from apps.dashboard_reports.models import JobData, JobHostSummary, TemplateMetadata
-
-    TemplateMetadata.objects.filter(template_id=1105).delete()
-    JobData.objects.filter(job_id=11014).delete()
-    hs = [{"id": 9001, "host_id": 901, "host_name": "labelled-host"}]
-    JobData.create_or_update_from_awx(
-        _make_awx_job(
-            job_id=11014,
-            template_id=1105,
-            template_name="uc-label",
-            host_summaries=hs,
-            labels=[333],
-        )
-    )
-    count = JobHostSummary.unique_count(options={"label": [333]})
-    assert count >= 1
-
-    count_none = JobHostSummary.unique_count(options={"label": [9999]})
-    assert count_none == 0

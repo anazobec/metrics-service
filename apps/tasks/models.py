@@ -487,25 +487,6 @@ class DailyMetricsSummary(CommonModel, AuditableModel):
         """
         return f"Daily Summary - {self.summary_date} ({self.get_status_display()})"
 
-    def get_hourly_collections(self):
-        """
-        Retrieve all hourly collections for this summary.
-
-        Returns:
-            QuerySet: HourlyMetricsCollection objects for this summary
-        """
-        from django.db.models import Q
-
-        # Return empty queryset if no hourly collections are associated
-        if not self.hourly_collection_ids:
-            return HourlyMetricsCollection.objects.none()
-
-        query = Q()
-        for collector_type, ids in self.hourly_collection_ids.items():
-            query |= Q(id__in=ids, collector_type=collector_type)
-
-        return HourlyMetricsCollection.objects.filter(query)
-
 
 class AnonymizedMetricsPayload(CommonModel, AuditableModel):
     """

@@ -218,7 +218,6 @@ def test_raw_only_collections_are_not_attached_to_daily_summary(hourly_collectio
 
     assert count == 1
     assert summary.hourly_collection_ids == {"unified_jobs": [rollup_collection.id]}
-    assert list(summary.get_hourly_collections().values_list("id", flat=True)) == [rollup_collection.id]
 
     from apps.tasks.models import HourlyMetricsCollection
 

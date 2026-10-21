@@ -364,28 +364,6 @@ def test_task_get_next_run_time_invalid_expression(user):
 
 @pytest.mark.unit
 @pytest.mark.django_db
-def test_daily_metrics_summary_get_hourly_collections_with_data():
-    """get_hourly_collections returns matching records when hourly_collection_ids is set."""
-    from apps.tasks.models import DailyMetricsSummary, HourlyMetricsCollection
-
-    ts = timezone.now().replace(minute=0, second=0, microsecond=0) - timedelta(hours=25)
-    coll = HourlyMetricsCollection.objects.create(
-        collector_type="unified_jobs",
-        collection_timestamp=ts,
-        raw_data={"test": 1},
-        status="collected",
-    )
-    summary = DailyMetricsSummary.objects.create(
-        summary_date=ts.date(),
-        hourly_collection_ids={"unified_jobs": [coll.id]},
-    )
-
-    qs = summary.get_hourly_collections()
-    assert qs.filter(pk=coll.pk).exists()
-
-
-@pytest.mark.unit
-@pytest.mark.django_db
 def test_anonymized_payload_str():
     """AnonymizedMetricsPayload __str__ returns expected format."""
     from apps.tasks.models import AnonymizedMetricsPayload

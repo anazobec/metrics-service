@@ -17,7 +17,7 @@ from apps.dashboard_reports.models import (
 
 @pytest.mark.unit
 @pytest.mark.django_db
-class TestDailySubscriptionCost:
+class TestMonthHelpers:
     def test_month_range_iter_same_month(self):
         start = datetime.datetime(2023, 5, 1)
         end = datetime.datetime(2023, 5, 31)
@@ -98,121 +98,6 @@ class TestDailySubscriptionCost:
         assert month_days == 29
         assert month_start_day == 1
         assert month_end_day == 29
-
-    def test_daily_subscription_cost_partial_first_and_last_month(self):
-        db = SubscriptionCost.get()
-        db.monthly_subscription_cost = decimal.Decimal("310")  # 10 per day for 31-day month
-        db.save()
-        # Start: Jan 15, End: Mar 10
-        start = datetime.datetime(year=2023, month=1, day=15)
-        end = datetime.datetime(year=2023, month=3, day=10)
-        result = db.daily_subscription_cost(start, end)
-        # Jan: 15-31 (17 days), Feb: 1-28 (28 days), Mar: 1-10 (10 days)
-        jan_days = 31
-        feb_days = 28
-        mar_days = 31
-        jan_overlap = 17
-        feb_overlap = 28
-        mar_overlap = 10
-        total_days = jan_overlap + feb_overlap + mar_overlap
-        total_cost = decimal.Decimal("310") * decimal.Decimal(jan_overlap) / decimal.Decimal(jan_days)
-        total_cost += decimal.Decimal("310") * decimal.Decimal(feb_overlap) / decimal.Decimal(feb_days)
-        total_cost += decimal.Decimal("310") * decimal.Decimal(mar_overlap) / decimal.Decimal(mar_days)
-        expected = total_cost / decimal.Decimal(total_days)
-        assert result == expected
-
-    def test_daily_subscription_cost_single_day(self):
-        db = SubscriptionCost.get()
-        db.monthly_subscription_cost = decimal.Decimal("300")
-        db.save()
-        start = datetime.datetime(year=2023, month=2, day=15)
-        end = datetime.datetime(year=2023, month=2, day=15)
-        result = db.daily_subscription_cost(start, end)
-        expected = decimal.Decimal("300") / decimal.Decimal(28)  # Feb 2023 has 28 days
-        assert result == expected
-
-    def test_daily_subscription_cost_full_month(self):
-        db = SubscriptionCost.get()
-        db.monthly_subscription_cost = decimal.Decimal("310")
-        db.save()
-        start = datetime.datetime(year=2023, month=1, day=1)
-        end = datetime.datetime(year=2023, month=1, day=31)
-        result = db.daily_subscription_cost(start, end)
-        expected = decimal.Decimal("310") / decimal.Decimal(31)
-        assert result == expected
-
-    def test_daily_subscription_cost_multiple_months_full(self):
-        db = SubscriptionCost.get()
-        db.monthly_subscription_cost = decimal.Decimal("300")
-        db.save()
-        start = datetime.datetime(year=2023, month=1, day=1)
-        end = datetime.datetime(year=2023, month=3, day=31)
-        result = db.daily_subscription_cost(start, end)
-        jan_days = 31
-        feb_days = 28
-        mar_days = 31
-        total_days = jan_days + feb_days + mar_days
-        total_cost = decimal.Decimal("300") * decimal.Decimal(jan_days) / decimal.Decimal(jan_days)
-        total_cost += decimal.Decimal("300") * decimal.Decimal(feb_days) / decimal.Decimal(feb_days)
-        total_cost += decimal.Decimal("300") * decimal.Decimal(mar_days) / decimal.Decimal(mar_days)
-        expected = total_cost / decimal.Decimal(total_days)
-        assert result == expected
-
-    @patch("apps.dashboard_reports.models.datetime")
-    def test_daily_subscription_cost_no_date(self, mock_datetime):
-        mock_datetime.now.return_value = datetime.datetime(year=2023, month=3, day=1)
-        db = SubscriptionCost.get()
-        daily_cost = db.daily_subscription_cost()
-        expected_daily_cost = db.monthly_subscription_cost / 31  # March has 31 days
-        assert daily_cost == expected_daily_cost
-
-    @patch("apps.dashboard_reports.models.datetime")
-    def test_daily_subscription_cost_no_start(self, mock_datetime):
-        mock_datetime.now.return_value = datetime.datetime(year=2026, month=2, day=21, hour=22, minute=1, second=45)
-        db = SubscriptionCost.get()
-        # Use the mocked datetime for end
-        daily_cost = db.daily_subscription_cost(start=None, end=mock_datetime.now.return_value)
-        expected_daily_cost = db.monthly_subscription_cost / 28  # February 2026 has 28 days
-        assert daily_cost == expected_daily_cost
-
-    @patch("apps.dashboard_reports.models.datetime")
-    def test_daily_subscription_cost_no_end(self, mock_datetime):
-        mock_datetime.now.return_value = datetime.datetime(year=2026, month=4, day=21, hour=22, minute=1, second=45)
-        db = SubscriptionCost.get()
-        # Use the mocked datetime for start
-        daily_cost = db.daily_subscription_cost(start=mock_datetime.now.return_value, end=None)
-        expected_daily_cost = db.monthly_subscription_cost / 30  # April has 30 days
-        assert daily_cost == expected_daily_cost
-
-    def test_daily_subscription_cost_start_greater_than_end(self):
-        db = SubscriptionCost.get()
-        db.monthly_subscription_cost = decimal.Decimal("310")
-        db.save()
-        start = datetime.datetime(year=2023, month=1, day=31)
-        end = datetime.datetime(year=2023, month=1, day=1)
-        result = db.daily_subscription_cost(start, end)
-        expected = decimal.Decimal("310") / decimal.Decimal(31)
-        assert result == expected
-
-    def test_daily_subscription_cost_zero_overlap_falls_back_to_default(self):
-        """If the multi-month loop accumulates zero total_days, fall back to default daily cost."""
-
-        SubscriptionCost.objects.all().delete()
-        cost = SubscriptionCost.objects.create(
-            monthly_subscription_cost=decimal.Decimal("3000.00"),
-            engineer_avg_hourly_rate=decimal.Decimal("60.00"),
-        )
-        start = datetime.datetime(2024, 1, 15, tzinfo=UTC)
-        end = datetime.datetime(2024, 3, 15, tzinfo=UTC)
-
-        # Patch _get_month_overlap_days to always return 0 overlap so total_days stays 0
-        with patch("apps.dashboard_reports.models._get_month_overlap_days", return_value=(31, 5, 4)):
-            # month_end_day (4) - month_start_day (5) + 1 = 0 → overlap <= 0 for all months
-            result = cost.daily_subscription_cost(start=start, end=end)
-
-        # Should fall back to default_daily_cost
-        assert isinstance(result, decimal.Decimal)
-        assert result > 0
 
 
 @pytest.mark.unit

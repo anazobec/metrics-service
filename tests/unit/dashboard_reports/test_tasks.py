@@ -712,8 +712,8 @@ class TestResolveCollectionParams:
         mock_jobdata.last_finished_timestamp.assert_not_called()
 
     @patch("apps.dashboard_reports.tasks.JobData")
-    def test_since_falls_back_to_last_timestamp(self, mock_jobdata):
-        """When since is absent and last_timestamp() has a value, it is used as since."""
+    def test_since_falls_back_to_last_finished_timestamp(self, mock_jobdata):
+        """When since is absent and last_finished_timestamp() has a value, it is used as since."""
         ts = datetime(2024, 3, 15, tzinfo=UTC)
         mock_jobdata.last_finished_timestamp.return_value = ts
         _, got_since, _, _ = _resolve_collection_params("collect_dashboard_reports_data", {})
@@ -723,7 +723,7 @@ class TestResolveCollectionParams:
     @patch("apps.dashboard_reports.tasks.get_retention_days", return_value=30)
     @patch("apps.dashboard_reports.tasks.JobData")
     def test_since_computed_from_retention_days_when_no_timestamp(self, mock_jobdata, mock_retention, _mock_use_ctrl):
-        """When controller retention is enabled and last_timestamp() is None, compute since from get_retention_days()."""
+        """When controller retention is enabled and last_finished_timestamp() is None, compute since from get_retention_days()."""
         from django.test import override_settings
 
         mock_jobdata.last_finished_timestamp.return_value = None

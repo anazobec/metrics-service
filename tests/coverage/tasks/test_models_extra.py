@@ -452,22 +452,6 @@ def test_anonymized_payload_auto_calculates_size():
     assert payload.payload_size_bytes > 0
 
 
-# ---------------------------------------------------------------------------
-# DailyMetricsSummary.get_hourly_collections
-# ---------------------------------------------------------------------------
-@pytest.mark.unit
-@pytest.mark.django_db
-def test_daily_metrics_summary_get_hourly_collections_empty():
-    from apps.tasks.models import DailyMetricsSummary
-
-    summary = DailyMetricsSummary.objects.create(
-        summary_date=timezone.now().date(),
-        hourly_collection_ids={},
-    )
-    qs = summary.get_hourly_collections()
-    assert qs.count() == 0
-
-
 @pytest.mark.unit
 @pytest.mark.django_db
 def test_daily_metrics_summary_str_representation():

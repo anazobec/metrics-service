@@ -366,29 +366,6 @@ class TestJobData:
                 template_metadata=None,
             )
 
-    def test_latest_timestamp_returns_none(self):
-        assert JobData.last_timestamp() is None
-
-    def test_all_records_null_awx_modified_returns_none(self):
-        JobData.objects.create(job_id=1, template_name="T1", elapsed=1)
-        JobData.objects.create(job_id=2, template_name="T2", elapsed=2)
-        assert JobData.last_timestamp() is None
-
-    def test_returns_latest_awx_modified(self):
-        now = datetime.datetime.now().astimezone(datetime.UTC)
-        earlier = (now - datetime.timedelta(days=1)).astimezone(datetime.UTC)
-        later = (now + datetime.timedelta(days=1)).astimezone(datetime.UTC)
-        JobData.objects.create(job_id=3, template_name="T3", elapsed=3, awx_modified=earlier)
-        JobData.objects.create(job_id=4, template_name="T4", elapsed=4, awx_modified=now)
-        JobData.objects.create(job_id=5, template_name="T5", elapsed=5, awx_modified=later)
-        assert JobData.last_timestamp() == later
-
-    def test_mixed_null_and_valid_awx_modified(self):
-        now = datetime.datetime.now().astimezone(datetime.UTC)
-        JobData.objects.create(job_id=6, template_name="T6", elapsed=6, awx_modified=None)
-        JobData.objects.create(job_id=7, template_name="T7", elapsed=7, awx_modified=now)
-        assert JobData.last_timestamp() == now
-
 
 @pytest.mark.unit
 @pytest.mark.django_db
@@ -604,95 +581,6 @@ class TestJobDataFilterMethods:
         assert qs.first().job_id == 10
         # None returns all
         assert JobData.objects.labels(None).count() == 2
-
-
-@pytest.mark.unit
-@pytest.mark.django_db
-class TestJobHostSummaryUniqueCount:
-    """
-    Unit tests for JobHostSummary.unique_count classmethod.
-    Tests counting unique hosts with various filters and edge cases.
-    """
-
-    @pytest.fixture
-    def host_summary_batch(self, job_data, template_metadata):
-        # Create two jobs with different hosts
-        job1 = JobData.objects.create(
-            job_id=100,
-            template_name="T1",
-            template_id=101,
-            project_id=201,
-            project_name="P1",
-            organization_id=301,
-            status="successful",
-            started=datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC),
-            finished=datetime.datetime(2024, 1, 2, tzinfo=datetime.UTC),
-            elapsed=100,
-            num_hosts=2,
-            launched_by_id=1,
-            launched_by_username="user1",
-            template_metadata=template_metadata,
-        )
-        job2 = JobData.objects.create(
-            job_id=101,
-            template_name="T2",
-            template_id=102,
-            project_id=202,
-            project_name="P2",
-            organization_id=302,
-            status="failed",
-            started=datetime.datetime(2024, 2, 1, tzinfo=datetime.UTC),
-            finished=datetime.datetime(2024, 2, 2, tzinfo=datetime.UTC),
-            elapsed=200,
-            num_hosts=3,
-            launched_by_id=2,
-            launched_by_username="user2",
-            template_metadata=template_metadata,
-        )
-        # Add labels
-        JobLabel.objects.create(job_data=job1, label_id=501)
-        JobLabel.objects.create(job_data=job2, label_id=502)
-        # Add host summaries
-        JobHostSummary.objects.create(job_data=job1, host_summary_id=1, host_id=10, host_name="hostA")
-        JobHostSummary.objects.create(job_data=job1, host_summary_id=2, host_id=11, host_name="hostB")
-        JobHostSummary.objects.create(job_data=job2, host_summary_id=3, host_id=12, host_name="hostC")
-        JobHostSummary.objects.create(job_data=job2, host_summary_id=4, host_id=10, host_name="hostA")  # hostA reused
-        return [job1, job2]
-
-    def test_unique_count_no_filters(self, host_summary_batch):
-        count = JobHostSummary.unique_count()
-        assert count == 3  # hostA, hostB, hostC
-
-    def test_unique_count_date_range(self, host_summary_batch):
-        start = datetime.datetime(2024, 2, 1, tzinfo=datetime.UTC)
-        end = datetime.datetime(2024, 2, 2, tzinfo=datetime.UTC)
-        count = JobHostSummary.unique_count(start=start, end=end)
-        assert count == 2  # hostC, hostA (from job2)
-
-    def test_unique_count_organization(self, host_summary_batch):
-        count = JobHostSummary.unique_count(options={"organization": [301]})
-        assert count == 2  # hostA, hostB (from job1)
-
-    def test_unique_count_project(self, host_summary_batch):
-        count = JobHostSummary.unique_count(options={"project": [202]})
-        assert count == 2  # hostC, hostA (from job2)
-
-    def test_unique_count_template(self, host_summary_batch):
-        count = JobHostSummary.unique_count(options={"template": [101]})
-        assert count == 2  # hostA, hostB (from job1)
-
-    def test_unique_count_label(self, host_summary_batch):
-        count = JobHostSummary.unique_count(options={"label": [502]})
-        assert count == 2  # hostC, hostA (from job2)
-
-    def test_unique_count_no_matches(self, host_summary_batch):
-        count = JobHostSummary.unique_count(options={"organization": [999]})
-        assert count == 0
-
-    def test_unique_count_empty_db(self):
-        assert JobHostSummary.objects.count() == 0
-        count = JobHostSummary.unique_count()
-        assert count == 0
 
 
 @pytest.mark.unit

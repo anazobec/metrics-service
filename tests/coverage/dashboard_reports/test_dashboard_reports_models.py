@@ -59,21 +59,6 @@ def test_subscription_cost_per_minute():
     assert per_min >= 0
 
 
-@pytest.mark.unit
-@pytest.mark.django_db
-def test_subscription_cost_daily():
-    from datetime import date
-
-    from apps.dashboard_reports.models import SubscriptionCost
-
-    SubscriptionCost.objects.all().delete()
-    cost = SubscriptionCost.get()
-    start = date(2024, 1, 1)
-    end = date(2024, 1, 31)
-    daily_cost = cost.daily_subscription_cost(start=start, end=end)
-    assert isinstance(daily_cost, decimal.Decimal)
-
-
 # ---------------------------------------------------------------------------
 # FilterSet model
 # ---------------------------------------------------------------------------
@@ -145,16 +130,6 @@ def test_template_metadata_get_by_awx_id_or_name_creates():
 # ---------------------------------------------------------------------------
 # JobData model
 # ---------------------------------------------------------------------------
-@pytest.mark.unit
-@pytest.mark.django_db
-def test_job_data_last_timestamp_empty():
-    from apps.dashboard_reports.models import JobData
-
-    JobData.objects.all().delete()
-    result = JobData.last_timestamp()
-    assert result is None
-
-
 @pytest.mark.unit
 @pytest.mark.django_db
 def test_job_data_queryset_methods():

@@ -6,7 +6,7 @@ Tests cover:
 - Task.get_next_run_time() with croniter import and exceptions (lines 218-229)
 - Task classmethod queries (lines 233, 237, 241)
 - HourlyMetricsCollection.__str__() and save() (lines 378, 391-394)
-- DailyMetricsSummary.__str__() and get_hourly_collections() (lines 468, 477-487)
+- DailyMetricsSummary.__str__() (line 468)
 - AnonymizedMetricsPayload.__str__(), can_retry(), save() (lines 575, 584, 597-600)
 """
 
@@ -384,63 +384,6 @@ class TestDailyMetricsSummary:
         assert "Daily Summary" in str_repr
         assert "2024-01-15" in str_repr
         assert "Aggregated" in str_repr  # Display name
-
-    def test_get_hourly_collections_returns_empty_when_none(self):
-        """Test get_hourly_collections with no collections (lines 480-481)."""
-        # Arrange
-        summary = DailyMetricsSummary.objects.create(
-            summary_date=date(2024, 1, 15),
-            aggregated_metrics={},
-            hourly_collection_ids={},
-        )
-
-        # Act
-        collections = summary.get_hourly_collections()
-
-        # Assert
-        assert collections.count() == 0
-
-    def test_get_hourly_collections_returns_associated_collections(self):
-        """Test get_hourly_collections returns related collections (lines 477-487)."""
-        # Arrange
-        collection_time = timezone.make_aware(timezone.datetime(2024, 1, 15, 10, 0))
-
-        # Create hourly collections
-        coll1 = HourlyMetricsCollection.objects.create(
-            collector_type="job_host_summary_service",
-            collection_timestamp=collection_time,
-            raw_data={"data": 1},
-        )
-        coll2 = HourlyMetricsCollection.objects.create(
-            collector_type="credentials_service",
-            collection_timestamp=collection_time,
-            raw_data={"data": 2},
-        )
-        # Create unrelated collection
-        HourlyMetricsCollection.objects.create(
-            collector_type="main_jobevent_service",
-            collection_timestamp=collection_time,
-            raw_data={"data": 3},
-        )
-
-        # Create summary with references
-        summary = DailyMetricsSummary.objects.create(
-            summary_date=date(2024, 1, 15),
-            aggregated_metrics={},
-            hourly_collection_ids={
-                "job_host_summary_service": [coll1.id],
-                "credentials_service": [coll2.id],
-            },
-        )
-
-        # Act
-        collections = summary.get_hourly_collections()
-
-        # Assert
-        assert collections.count() == 2
-        collection_ids = {c.id for c in collections}
-        assert coll1.id in collection_ids
-        assert coll2.id in collection_ids
 
 
 @pytest.mark.unit
