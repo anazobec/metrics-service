@@ -64,6 +64,9 @@ class CollectorEntry:
         description: customer-facing summary of the data returned by the collector.
         payload_schema: typed description of the raw JSON payload for OpenAPI and BI consumers;
             required for enabled collectors.
+        exclude_columns: collector output columns withheld from everything leaving the
+            service — the analytics API and the anonymized rollups, but not in-service
+            consumers such as the dashboard sync (see :mod:`apps.analytics.exclusions`).
     """
 
     name: str
@@ -74,6 +77,7 @@ class CollectorEntry:
     note: str = field(default="", kw_only=True)
     description: str = field(default="", kw_only=True)
     payload_schema: PayloadSchema | None = field(default=None, kw_only=True)
+    exclude_columns: tuple[str, ...] = field(default=(), kw_only=True)
     group: str = field(init=False)
     mu_function: str = field(init=False)
 
@@ -104,6 +108,10 @@ _ENABLED: list[CollectorEntry] = [
         mode="hourly",
         enabled=True,
         payload_schema=PAYLOAD_SCHEMAS["unified_jobs_dashboard"],
+        # AAP-96704 / ANSTRAT-1587 req #8: the collector returns launched_by_username because
+        # the dashboard JobData sync needs it to resolve the current user's AWX id. It must not
+        # reach the analytics API, so it is withheld here rather than dropped in the m-u SQL.
+        exclude_columns=("launched_by_username",),
         description="Job executions, including status and timing, organization, inventory, project, template, execution environment, launcher, labels, and host count.",
     ),
     CollectorEntry(

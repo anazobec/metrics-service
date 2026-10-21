@@ -565,7 +565,9 @@ def generic_collect_metrics(
         # Persist the raw pre-prepare() output for the analytics API (enabled collectors only).
         # Best-effort and non-invasive: failures are swallowed inside the helper so the existing
         # rollup path below is never affected. Lazy import avoids a tasks<->analytics import cycle.
+        from apps.analytics.exclusions import apply_exclusions
         from apps.analytics.persist import persist_analytics_payload
+        from apps.analytics.registry import get_entry_by_type
 
         persist_analytics_payload(
             collector_type,
@@ -579,6 +581,9 @@ def generic_collect_metrics(
         )
 
         if post_collect_hook is not None:
+            # Hooks get the unfiltered output on purpose: exclude_columns guards data leaving the
+            # service, and the dashboard JobData sync is an in-service consumer that needs the
+            # excluded columns (see apps.analytics.exclusions).
             _run_post_collect_hook(post_collect_hook, raw_data, collector_type, task_execution_instance)
 
         if not config.get("persist_to_hourly", True):
@@ -591,7 +596,10 @@ def generic_collect_metrics(
                 },
             )
 
-        rollup_data = config["rollup_processor"]().prepare(raw_data) if config["rollup_processor"] else raw_data
+        entry = get_entry_by_type(collector_type)
+        collected = apply_exclusions(raw_data, entry.exclude_columns) if entry else raw_data
+
+        rollup_data = config["rollup_processor"]().prepare(collected) if config["rollup_processor"] else collected
 
         return _persist_collection(
             HourlyMetricsCollection,

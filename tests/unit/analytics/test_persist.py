@@ -266,3 +266,49 @@ def test_generic_analytics_only_collection_fails_when_persistence_fails():
 
     assert result["status"] == "error"
     assert "database down" in result["error"]
+
+
+def test_persist_strips_registry_excluded_columns():
+    """launched_by_username is collected for the dashboard but must not reach the API."""
+    started, finished = _times()
+    df = pd.DataFrame([{"id": 1, "launched_by_id": 7, "launched_by_username": "admin"}])
+
+    persist_analytics_payload("unified_jobs", df, since=None, until=None, started_at=started, finished_at=finished)
+
+    row = AnalyticsPayload.objects.get(collector="controller.unified_jobs_dashboard")
+    assert row.payload == [{"id": 1, "launched_by_id": 7}]
+
+
+def test_generic_collection_excludes_columns_from_the_rollup_but_not_the_hook():
+    from apps.tasks.utils import generic_collect_metrics
+
+    raw_data = pd.DataFrame([{"id": 1, "launched_by_id": 7, "launched_by_username": "admin"}])
+    collector = MagicMock()
+    collector.gather.return_value = raw_data
+    rollup_processor = MagicMock()
+    hook = MagicMock()
+
+    with (
+        patch("apps.analytics.persist.persist_analytics_payload"),
+        patch("apps.tasks.utils._persist_collection"),
+    ):
+        generic_collect_metrics(
+            collector_type="unified_jobs",
+            collector_registry={
+                "unified_jobs": {
+                    "collector_func": MagicMock(return_value=collector),
+                    "rollup_processor": MagicMock(return_value=rollup_processor),
+                }
+            },
+            collection_mode="hourly",
+            timestamp=_times()[0],
+            db_connection=MagicMock(),
+            post_collect_hook=hook,
+        )
+
+    # The dashboard sync is in-service and needs the username to resolve the AWX user id.
+    assert "launched_by_username" in hook.call_args.args[0].columns
+
+    rollup_frame = rollup_processor.prepare.call_args.args[0]
+    assert "launched_by_username" not in rollup_frame.columns
+    assert "launched_by_id" in rollup_frame.columns

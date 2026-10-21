@@ -16,6 +16,7 @@ import json
 import logging
 from typing import Any
 
+from apps.analytics.exclusions import apply_exclusions
 from apps.analytics.models import LOCAL_SOURCE, AnalyticsPayload
 from apps.analytics.registry import get_entry_by_type
 from apps.core.json_utils import to_jsonable
@@ -66,10 +67,12 @@ def persist_analytics_payload(
 ) -> None:
     """Persist raw ``gather()`` output for an enabled collector, keyed by public name.
 
-    No-op for collectors that aren't enabled in the analytics registry. By default, persistence is
-    best-effort: errors are logged and swallowed so the caller's rollup path is unaffected. Callers
-    that require storage can set ``raise_on_error``. Stores the public ``name`` (``group.function``)
-    in ``collector``. Every successful collection is appended.
+    No-op for collectors that aren't enabled in the analytics registry. The entry's
+    ``exclude_columns`` are stripped before storage, so nothing withheld from the API can reach
+    ``AnalyticsPayload`` through any caller (see :mod:`apps.analytics.exclusions`). By default,
+    persistence is best-effort: errors are logged and swallowed so the caller's rollup path is
+    unaffected. Callers that require storage can set ``raise_on_error``. Stores the public ``name``
+    (``group.function``) in ``collector``. Every successful collection is appended.
 
     Args:
         collector_type: metrics-service collector key (mapped to the public name via the registry).
@@ -86,7 +89,7 @@ def persist_analytics_payload(
         return
 
     try:
-        payload = {} if raw_data is None else to_jsonable(raw_data)
+        payload = {} if raw_data is None else to_jsonable(apply_exclusions(raw_data, entry.exclude_columns))
         cluster_id = _get_cluster_id(db_connection)
         # collector_type is the internal task key (for example, ``main_host``)
         # entry.name is the full whitelist/API/storage name (for example, ``controller.main_host``)
