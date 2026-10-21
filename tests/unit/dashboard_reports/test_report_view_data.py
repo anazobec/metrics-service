@@ -107,7 +107,9 @@ def job_data(template_metadata):
 
     All filters (date, organization, template, project, labels) return job_id 1 and 2.
     """
-    now = get_now()
+    # Use UTC midnight as the offset anchor so paired jobs stay on the same day
+    # regardless of the time at which the test runs.
+    now = get_now().replace(hour=0, minute=0, second=0, microsecond=0)
 
     # Job data configuration: (job_id, template_idx, org_id, proj_id, proj_name, status, time_offset, elapsed, num_hosts, user_id, username)
     job_configs = [

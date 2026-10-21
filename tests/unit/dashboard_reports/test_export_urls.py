@@ -4,6 +4,7 @@ import csv
 import datetime
 import decimal
 import io
+import unittest.mock
 from unittest.mock import patch
 
 import pytest
@@ -76,7 +77,9 @@ def job_data(template_metadata):
     Two jobs for Template A (finished recently) and two for Template B (finished ~7 days ago).
     Mirrors the fixture in test_report_view_data.py for consistency.
     """
-    now = get_now()
+    # Use UTC midnight as the offset anchor so paired jobs stay on the same day
+    # regardless of the time at which the test runs.
+    now = get_now().replace(hour=0, minute=0, second=0, microsecond=0)
     job_configs = [
         (1, 0, 1, 10, "Project A", JobStatusChoices.SUCCESSFUL, datetime.timedelta(hours=3), 60, 10, 1, "test_user"),
         (2, 0, 1, 10, "Project A", JobStatusChoices.FAILED, datetime.timedelta(hours=2), 5, 10, 1, "test_user"),
@@ -504,6 +507,21 @@ class TestExportROICSV:
 class TestExportTrendsCSV:
     """Tests for report_type=trends CSV output."""
 
+    FIXED_NOW = datetime.datetime(2026, 6, 15, 12, 0, 0, tzinfo=datetime.UTC)
+
+    @pytest.fixture(autouse=True)
+    def fixed_now(self, request):
+        """Pin time for trend tests, allowing the granularity test to cover boundary hours."""
+        callspec = getattr(request.node, "callspec", None)
+        now = callspec.params.get("simulated_now", self.FIXED_NOW) if callspec else self.FIXED_NOW
+        mock_dt = unittest.mock.MagicMock(wraps=datetime)
+        mock_dt.datetime.now = unittest.mock.Mock(return_value=now)
+        with (
+            patch(f"{__name__}.get_now", return_value=now),
+            patch("apps.dashboard_reports.filters.datetime", mock_dt),
+        ):
+            yield
+
     @pytest.fixture(autouse=True)
     def fixed_subscription_cost(self):
         with patch(
@@ -584,11 +602,21 @@ class TestExportTrendsCSV:
         dates = [datetime.datetime.strptime(row[0], "%Y-%m-%d") for row in rows[1:]]
         assert dates == sorted(dates)
 
-    def test_trends_granularity_matches_period(self, job_data, admin_client):
+    @pytest.mark.parametrize(
+        "simulated_now",
+        [
+            datetime.datetime(2026, 10, 10, 1, 0, tzinfo=datetime.UTC),
+            datetime.datetime(2026, 10, 10, 2, 0, tzinfo=datetime.UTC),
+            datetime.datetime(2026, 10, 10, 2, 59, tzinfo=datetime.UTC),
+        ],
+        ids=["01:00-UTC", "02:00-UTC", "02:59-UTC"],
+    )
+    def test_trends_granularity_matches_period(self, job_data, admin_client, simulated_now):
         """
         Granularity is derived from the period, not a separate query param.
-        last_14_days → kind=day → two distinct date buckets (jobs today and ~7 days ago).
+        last_14_days → kind=day → two distinct date buckets at every time of day.
         """
+        assert get_now() == simulated_now
         url = reverse("dashboard_reports:report-export")
         response = admin_client.get(url, data=build_export_query("trends", days_back=14))
         assert response.status_code == 200
