@@ -261,6 +261,64 @@ def test_cleanup_metrics_data_dry_run_keeps_old_analytics_payload():
 
 @pytest.mark.unit
 @pytest.mark.django_db
+def test_cleanup_metrics_data_deletes_old_api_usage_counters():
+    from apps.analytics.models import APIUsageCounter
+    from apps.tasks.cleanup.cleanup_metrics_data import cleanup_metrics_data
+
+    row = APIUsageCounter.objects.create(
+        usage_date=timezone.now().date() - timedelta(days=400),
+        endpoint_name="analytics:v1:root",
+        status_class=2,
+        request_count=5,
+    )
+
+    result = cleanup_metrics_data(analytics_retention_days=90)
+    assert result["status"] == "success"
+    assert result["results"]["api_usage_counters"]["deleted"] >= 1
+    assert not APIUsageCounter.objects.filter(pk=row.pk).exists()
+
+
+@pytest.mark.unit
+@pytest.mark.django_db
+def test_cleanup_metrics_data_keeps_recent_api_usage_counters():
+    from apps.analytics.models import APIUsageCounter
+    from apps.tasks.cleanup.cleanup_metrics_data import cleanup_metrics_data
+
+    row = APIUsageCounter.objects.create(
+        usage_date=timezone.now().date() - timedelta(days=1),
+        endpoint_name="analytics:v1:root",
+        status_class=2,
+        request_count=5,
+    )
+
+    result = cleanup_metrics_data(analytics_retention_days=90)
+    assert result["status"] == "success"
+    assert result["results"]["api_usage_counters"]["deleted"] == 0
+    assert APIUsageCounter.objects.filter(pk=row.pk).exists()
+
+
+@pytest.mark.unit
+@pytest.mark.django_db
+def test_cleanup_metrics_data_dry_run_keeps_old_api_usage_counters():
+    from apps.analytics.models import APIUsageCounter
+    from apps.tasks.cleanup.cleanup_metrics_data import cleanup_metrics_data
+
+    row = APIUsageCounter.objects.create(
+        usage_date=timezone.now().date() - timedelta(days=400),
+        endpoint_name="analytics:v1:root",
+        status_class=2,
+        request_count=5,
+    )
+
+    result = cleanup_metrics_data(analytics_retention_days=90, dry_run=True)
+    assert result["status"] == "success"
+    assert result["results"]["api_usage_counters"]["found"] >= 1
+    assert result["results"]["api_usage_counters"]["deleted"] == 0
+    assert APIUsageCounter.objects.filter(pk=row.pk).exists()
+
+
+@pytest.mark.unit
+@pytest.mark.django_db
 def test_cleanup_metrics_data_uses_controller_retention_when_not_overridden():
     from apps.analytics.models import AnalyticsPayload
     from apps.tasks.cleanup.cleanup_metrics_data import cleanup_metrics_data

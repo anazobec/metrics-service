@@ -174,7 +174,11 @@ INSTALL_TYPE = "containerized"
 
 
 # Project-specific middleware additions
-MIDDLEWARE = "@merge_unique whitenoise.middleware.WhiteNoiseMiddleware"
+MIDDLEWARE = [
+    "dynaconf_merge_unique",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "apps.analytics.middleware.APIUsageMiddleware",
+]
 
 # Template directories for core app
 TEMPLATES = [

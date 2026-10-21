@@ -6,18 +6,36 @@ Retention policies:
 - Daily summaries: 30 days
 - Anonymized payloads: 30 days (or 7 days after sent)
 - Analytics payloads: Controller cleanup_jobs retention, falling back to 90 days
+- API usage counters: same analytics retention, keyed on usage_date
 """
 
 import logging
 from datetime import timedelta
 from typing import Any
 
+from django.db.models import QuerySet
 from django.utils import timezone
 
 from ..retention import DEFAULT_AWX_DB_NAME, get_controller_retention_days
 from ..utils import create_task_result, log_task_execution
 
 logger = logging.getLogger(__name__)
+
+
+def _delete_old_rows(queryset: QuerySet, dry_run: bool, label: str | None = None) -> dict[str, int]:
+    """
+    Count rows in a cleanup queryset and delete them unless dry_run.
+
+    Returns a ``{"found", "deleted"}`` stats dict. When ``label`` names a model
+    (``app_label.ModelName``), ``deleted`` counts only that model's rows from
+    Django's deletion info, excluding rows removed by cascade.
+    """
+    found = queryset.count()
+    if dry_run or found == 0:
+        return {"found": found, "deleted": 0}
+    deleted_total, deletion_info = queryset.delete()
+    deleted = deletion_info.get(label, 0) if label else deleted_total
+    return {"found": found, "deleted": deleted}
 
 
 def cleanup_metrics_data(**kwargs) -> dict[str, Any]:
@@ -29,6 +47,7 @@ def cleanup_metrics_data(**kwargs) -> dict[str, Any]:
     - Daily summaries: 30 days
     - Anonymized payloads: 30 days (or 7 days after sent)
     - Analytics payloads: Controller cleanup_jobs retention, falling back to 90 days
+    - API usage counters: same analytics retention, keyed on usage_date
 
     Args:
         **kwargs: Task data containing:
@@ -37,13 +56,14 @@ def cleanup_metrics_data(**kwargs) -> dict[str, Any]:
             - payload_retention_days (int): Days to keep sent payloads (default: 7)
             - analytics_retention_days (int): Explicit analytics retention override for manual runs.
               When omitted, use the Controller cleanup_jobs schedule or 90 days if unavailable.
+              Applies to analytics payloads and API usage counters.
             - awx_database (str): Controller database alias (default: awx)
             - dry_run (bool): If true, only count without deleting (default: False)
 
     Returns:
         dict: Task result with cleanup statistics
     """
-    from apps.analytics.models import AnalyticsPayload
+    from apps.analytics.models import AnalyticsPayload, APIUsageCounter
     from apps.tasks.models import AnonymizedMetricsPayload, DailyMetricsSummary, HourlyMetricsCollection
 
     hourly_retention_days = kwargs.get("hourly_retention_days", 7)
@@ -72,6 +92,7 @@ def cleanup_metrics_data(**kwargs) -> dict[str, Any]:
         "daily_summaries": {"found": 0, "deleted": 0},
         "anonymized_payloads": {"found": 0, "deleted": 0},
         "analytics_payloads": {"found": 0, "deleted": 0},
+        "api_usage_counters": {"found": 0, "deleted": 0},
     }
 
     try:
@@ -79,49 +100,51 @@ def cleanup_metrics_data(**kwargs) -> dict[str, Any]:
 
         # Cleanup hourly collections older than retention period
         hourly_cutoff = now - timedelta(days=hourly_retention_days)
-        old_hourly = HourlyMetricsCollection.objects.filter(collection_timestamp__lt=hourly_cutoff)
-        results["hourly_collections"]["found"] = old_hourly.count()
-
-        if not dry_run and results["hourly_collections"]["found"] > 0:
-            deleted_count, _ = old_hourly.delete()
-            results["hourly_collections"]["deleted"] = deleted_count
+        results["hourly_collections"] = _delete_old_rows(
+            HourlyMetricsCollection.objects.filter(collection_timestamp__lt=hourly_cutoff), dry_run
+        )
 
         # Cleanup daily summaries older than retention period
         daily_cutoff_date = now.date() - timedelta(days=daily_retention_days)
-        old_daily = DailyMetricsSummary.objects.filter(summary_date__lt=daily_cutoff_date)
-        results["daily_summaries"]["found"] = old_daily.count()
-
-        if not dry_run and results["daily_summaries"]["found"] > 0:
-            _, deletion_info = old_daily.delete()
-            results["daily_summaries"]["deleted"] = deletion_info.get("tasks.DailyMetricsSummary", 0)
+        results["daily_summaries"] = _delete_old_rows(
+            DailyMetricsSummary.objects.filter(summary_date__lt=daily_cutoff_date),
+            dry_run,
+            label="tasks.DailyMetricsSummary",
+        )
 
         # Cleanup sent payloads older than retention period
         # Keep unsent/failed/pending payloads longer (30 days) for retry/debugging
         sent_payload_cutoff = now - timedelta(days=payload_retention_days)
         unsent_payload_cutoff = now - timedelta(days=30)
 
-        old_sent_payloads = AnonymizedMetricsPayload.objects.filter(status="sent", sent_at__lt=sent_payload_cutoff)
-        old_unsent_payloads = AnonymizedMetricsPayload.objects.filter(
-            status__in=["failed", "pending", "sending", "retry", "unavailable"], created__lt=unsent_payload_cutoff
+        sent_stats = _delete_old_rows(
+            AnonymizedMetricsPayload.objects.filter(status="sent", sent_at__lt=sent_payload_cutoff), dry_run
         )
-
-        total_old_payloads = old_sent_payloads.count() + old_unsent_payloads.count()
-        results["anonymized_payloads"]["found"] = total_old_payloads
-
-        if not dry_run and total_old_payloads > 0:
-            sent_deleted, _ = old_sent_payloads.delete()
-            unsent_deleted, _ = old_unsent_payloads.delete()
-            results["anonymized_payloads"]["deleted"] = sent_deleted + unsent_deleted
+        unsent_stats = _delete_old_rows(
+            AnonymizedMetricsPayload.objects.filter(
+                status__in=["failed", "pending", "sending", "retry", "unavailable"], created__lt=unsent_payload_cutoff
+            ),
+            dry_run,
+        )
+        results["anonymized_payloads"] = {
+            "found": sent_stats["found"] + unsent_stats["found"],
+            "deleted": sent_stats["deleted"] + unsent_stats["deleted"],
+        }
 
         # Cleanup analytics payloads (BYO-BI raw collector output) older than retention period.
         # Keyed on `created` (row age), not `finished_at` (collection completion time).
         analytics_cutoff = now - timedelta(days=analytics_retention_days)
-        old_analytics = AnalyticsPayload.objects.filter(created__lt=analytics_cutoff)
-        results["analytics_payloads"]["found"] = old_analytics.count()
+        results["analytics_payloads"] = _delete_old_rows(
+            AnalyticsPayload.objects.filter(created__lt=analytics_cutoff), dry_run
+        )
 
-        if not dry_run and results["analytics_payloads"]["found"] > 0:
-            deleted_count, _ = old_analytics.delete()
-            results["analytics_payloads"]["deleted"] = deleted_count
+        # Cleanup API usage counters (daily endpoint aggregates) under the same analytics
+        # retention. Keyed on `usage_date`; the daily rollup reads only yesterday's counters,
+        # which survive even the shortest valid retention because the cutoff is exclusive.
+        api_usage_cutoff_date = now.date() - timedelta(days=analytics_retention_days)
+        results["api_usage_counters"] = _delete_old_rows(
+            APIUsageCounter.objects.filter(usage_date__lt=api_usage_cutoff_date), dry_run
+        )
 
         log_task_execution("cleanup_metrics_data", "completed", f"Cleanup complete: {results}")
 

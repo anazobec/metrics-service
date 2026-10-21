@@ -199,7 +199,7 @@ class TestDailyMetricsRollupTelemetry:
 @pytest.mark.unit
 @pytest.mark.django_db
 class TestDailyAnonymizeTelemetry:
-    """Tests that daily_anonymize_and_prepare forwards dashboard_telemetry to the payload."""
+    """Tests that daily_anonymize_and_prepare forwards telemetry to the payload."""
 
     def test_dashboard_telemetry_included_in_anonymized_data(self):
         """When the DailyMetricsSummary metrics contain dashboard_telemetry,
@@ -240,6 +240,65 @@ class TestDailyAnonymizeTelemetry:
         payload = AnonymizedMetricsPayload.objects.get(summary_date=specific_date)
         assert payload.anonymized_data["dashboard_telemetry"] == telemetry
 
+    def test_api_usage_telemetry_included_in_anonymized_data(self):
+        from apps.analytics.models import APIUsageCounter
+        from apps.tasks.models import AnonymizedMetricsPayload, DailyMetricsSummary
+
+        specific_date = date(2024, 8, 15)
+        DailyMetricsSummary.objects.filter(summary_date=specific_date).delete()
+        APIUsageCounter.record_request(specific_date, "analytics:v1:root", 2)
+        APIUsageCounter.record_request(specific_date, "analytics:v1:rows", 4)
+        APIUsageCounter.record_request(specific_date, "analytics:v1:collect", 5)
+
+        DailyMetricsSummary.objects.create(
+            summary_date=specific_date,
+            status="aggregated",
+            aggregated_metrics={"unified_jobs": {}, "job_host_summary_service": {}},
+        )
+
+        with patch("metrics_utility.anonymized_rollups.anonymize_rollups", return_value={"data": {"metrics": []}}):
+            from apps.tasks.collectors.daily_anonymize_and_prepare import daily_anonymize_and_prepare
+
+            result = daily_anonymize_and_prepare(summary_date=specific_date.isoformat())
+
+        assert result["status"] == "success"
+        payload = AnonymizedMetricsPayload.objects.get(summary_date=specific_date)
+        telemetry = payload.anonymized_data["api_usage_telemetry"]
+        assert telemetry["available"] is True
+        assert telemetry["total_requests"] == 3
+        assert telemetry["by_endpoint"]["analytics:v1:root"]["2xx"] == 1
+        assert telemetry["by_endpoint"]["analytics:v1:rows"]["4xx"] == 1
+        assert telemetry["by_endpoint"]["analytics:v1:collect"]["5xx"] == 1
+        assert telemetry["by_endpoint"]["analytics:v1:root"]["4xx"] == 0
+
+    def test_api_usage_telemetry_failure_is_marked_unavailable(self):
+        from apps.analytics.models import APIUsageCounter
+        from apps.tasks.models import AnonymizedMetricsPayload, DailyMetricsSummary
+
+        specific_date = date(2024, 8, 16)
+        DailyMetricsSummary.objects.filter(summary_date=specific_date).delete()
+        DailyMetricsSummary.objects.create(
+            summary_date=specific_date,
+            status="aggregated",
+            aggregated_metrics={"unified_jobs": {}, "job_host_summary_service": {}},
+        )
+
+        with (
+            patch("metrics_utility.anonymized_rollups.anonymize_rollups", return_value={"data": {"metrics": []}}),
+            patch.object(APIUsageCounter, "daily_summary", side_effect=RuntimeError("database unavailable")),
+        ):
+            from apps.tasks.collectors.daily_anonymize_and_prepare import daily_anonymize_and_prepare
+
+            result = daily_anonymize_and_prepare(summary_date=specific_date.isoformat())
+
+        assert result["status"] == "success"
+        payload = AnonymizedMetricsPayload.objects.get(summary_date=specific_date)
+        assert payload.anonymized_data["api_usage_telemetry"] == {
+            "available": False,
+            "total_requests": 0,
+            "by_endpoint": {},
+        }
+
     def test_missing_dashboard_telemetry_defaults_to_empty_list(self):
         """When dashboard_telemetry is absent from the summary metrics,
         the payload's anonymized_data sets dashboard_telemetry to []."""
@@ -264,6 +323,9 @@ class TestDailyAnonymizeTelemetry:
         assert result["status"] == "success"
         payload = AnonymizedMetricsPayload.objects.get(summary_date=specific_date)
         assert payload.anonymized_data["dashboard_telemetry"] == []
+        api_telemetry = payload.anonymized_data["api_usage_telemetry"]
+        assert api_telemetry["available"] is True
+        assert api_telemetry["total_requests"] == 0
 
     def test_no_sensitive_data_in_payload(self):
         """The dashboard_telemetry transmitted in the payload contains no sensitive fields."""

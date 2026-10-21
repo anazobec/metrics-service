@@ -4,8 +4,9 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from django.utils import timezone
+from rest_framework.test import APIClient
 
-from apps.analytics.models import AnalyticsPayload
+from apps.analytics.models import AnalyticsPayload, APIUsageCounter
 from apps.tasks.models import Task
 
 pytestmark = [pytest.mark.unit, pytest.mark.django_db]
@@ -112,6 +113,39 @@ def test_root_requires_auth(api_client):
 
 def test_rows_unknown_collector_404(authenticated_client):
     assert authenticated_client.get(f"{ROOT}nope.nope/").status_code == 404
+
+
+def test_api_requests_are_counted_for_successful_and_failed_responses(authenticated_client):
+    usage_date = timezone.now().date()
+
+    unauthorized_response = APIClient().get(ROOT)
+    discovery_response = authenticated_client.get(ROOT)
+    rows_response = authenticated_client.get(f"{ROOT}nope.nope/")
+    collect_response = authenticated_client.post(f"{ROOT}{CONFIG}/collect/", {}, format="json")
+
+    assert unauthorized_response.status_code in (401, 403)
+    assert discovery_response.status_code == 200
+    assert rows_response.status_code == 404
+    assert collect_response.status_code == 202
+
+    summary = APIUsageCounter.daily_summary(usage_date)
+    assert summary["total_requests"] == 4
+    assert summary["by_endpoint"]["analytics:v1:root"]["4xx"] == 1
+    assert summary["by_endpoint"]["analytics:v1:root"]["2xx"] == 1
+    assert summary["by_endpoint"]["analytics:v1:rows"]["4xx"] == 1
+    assert summary["by_endpoint"]["analytics:v1:collect"]["2xx"] == 1
+
+
+def test_api_preflight_requests_are_counted():
+    usage_date = timezone.now().date()
+
+    response = APIClient().options(ROOT)
+
+    assert response.status_code in (200, 403)
+    status_class = response.status_code // 100
+    summary = APIUsageCounter.daily_summary(usage_date)
+    assert summary["total_requests"] == 1
+    assert summary["by_endpoint"]["analytics:v1:root"][f"{status_class}xx"] == 1
 
 
 def test_rows_return_collection_envelope(authenticated_client):

@@ -1,6 +1,7 @@
 # Analytics Retention
 
-Analytics payload cleanup follows the Controller `cleanup_jobs` schedule. The
+Analytics data cleanup — `AnalyticsPayload` rows and `APIUsageCounter` daily
+aggregates — follows the Controller `cleanup_jobs` schedule. The
 retention value is read from the Controller database each time the cleanup task
 runs, so changing the Controller schedule takes effect on the next cleanup run.
 
@@ -39,5 +40,8 @@ manual runs and overrides the resolved Controller value. The scheduled
 `cleanup_metrics_data` task does not pass that argument, so it follows the
 Controller schedule dynamically.
 
-The cleanup cutoff uses the `AnalyticsPayload.created` timestamp. Existing
-retention policies for other metrics tables are unchanged.
+The cleanup cutoff uses the `AnalyticsPayload.created` timestamp and the
+`APIUsageCounter.usage_date` date. The daily rollup reads only yesterday's
+usage counters, which survive even the shortest valid retention because the
+cutoff is exclusive. Existing retention policies for other metrics tables are
+unchanged.
