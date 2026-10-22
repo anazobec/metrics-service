@@ -94,7 +94,19 @@ def test_subscription_cost_viewset(auth_client):
 @pytest.mark.django_db
 def test_template_metadata_list(auth_client):
     response = auth_client.get("/api/v1/dashboard_reports/template_metadata/")
-    assert response.status_code in (200, 404)
+    assert response.status_code == 405
+
+
+@pytest.mark.unit
+@pytest.mark.django_db
+def test_template_metadata_partial_update_all(auth_client):
+    response = auth_client.patch(
+        "/api/v1/dashboard_reports/template_metadata/",
+        {"time_taken_manually_execute_minutes": 5},
+        format="json",
+    )
+    assert response.status_code == 200
+    assert response.json() == {"updated": 0}
 
 
 # ---------------------------------------------------------------------------

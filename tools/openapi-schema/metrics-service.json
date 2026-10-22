@@ -2242,6 +2242,56 @@
                 "x-ai-description": "Partially update existing dashboard reports subscription cost"
             }
         },
+        "/api/v1/dashboard_reports/template_metadata/": {
+            "patch": {
+                "operationId": "dashboard_reports_template_metadata_partial_update_all",
+                "description": "Applies the given time estimates (minutes) to every template metadata record, overwriting existing values. Only the provided fields are changed.",
+                "summary": "Partially update all template metadata.",
+                "tags": [
+                    "dashboard_reports"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedTemplateMetadataRequest"
+                            }
+                        },
+                        "application/x-www-form-urlencoded": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedTemplateMetadataRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedTemplateMetadataRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    },
+                    {
+                        "basicAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TemplateMetadataUpdateAllResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                },
+                "x-ai-description": "Partially update existing dashboard reports template metadatum"
+            }
+        },
         "/api/v1/dashboard_reports/template_metadata/{id}/": {
             "get": {
                 "operationId": "dashboard_reports_template_metadata_retrieve",
@@ -19098,6 +19148,18 @@
                 "required": [
                     "time_taken_create_automation_minutes",
                     "time_taken_manually_execute_minutes"
+                ]
+            },
+            "TemplateMetadataUpdateAllResponse": {
+                "type": "object",
+                "properties": {
+                    "updated": {
+                        "type": "integer",
+                        "description": "Number of template metadata records updated"
+                    }
+                },
+                "required": [
+                    "updated"
                 ]
             },
             "TopProject": {

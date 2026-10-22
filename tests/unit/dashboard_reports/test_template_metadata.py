@@ -338,3 +338,43 @@ class TestTemplateMetadataUrls(TestCase):
     def test_post_not_mapped(self):
         match = resolve("/api/v1/dashboard_reports/template_metadata/1/")
         assert "post" not in match.func.actions
+
+
+@pytest.mark.unit
+@pytest.mark.django_db
+class TestTemplateMetadataBulkUpdate:
+    url = "/api/v1/dashboard_reports/template_metadata/"
+
+    @pytest.fixture
+    def client(self):
+        from rest_framework.test import APIClient
+
+        from apps.core.models import User
+
+        c = APIClient()
+        c.force_authenticate(User.objects.create(username="admin", is_superuser=True))
+        return c
+
+    def test_updates_all_partially(self, client):
+        for i in (1, 2):
+            TemplateMetadata.objects.create(
+                template_id=i,
+                template_name=f"t{i}",
+                time_taken_manually_execute_minutes=1,
+                time_taken_create_automation_minutes=2,
+            )
+        r = client.patch(self.url, {"time_taken_manually_execute_minutes": 30}, format="json")
+        assert r.status_code == 200
+        assert r.json() == {"updated": 2}
+        for row in TemplateMetadata.objects.all():
+            assert row.time_taken_manually_execute_minutes == 30
+            assert row.time_taken_create_automation_minutes == 2
+
+    def test_empty_body_rejected(self, client):
+        assert client.patch(self.url, {}, format="json").status_code == 400
+
+    def test_negative_rejected(self, client):
+        assert client.patch(self.url, {"time_taken_create_automation_minutes": -1}, format="json").status_code == 400
+
+    def test_put_not_allowed(self, client):
+        assert client.put(self.url, {}, format="json").status_code == 405
