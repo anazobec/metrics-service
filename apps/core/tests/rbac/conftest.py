@@ -19,11 +19,6 @@ def create_managed_roles(db):
 
 
 @pytest.fixture
-def rando(db):
-    return User.objects.create(username=f"rando-{uuid.uuid4().hex[:8]}")
-
-
-@pytest.fixture
 def organization(db):
     return Organization.objects.create(name="Test Org")
 

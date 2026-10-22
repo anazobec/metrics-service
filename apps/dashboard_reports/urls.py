@@ -31,6 +31,12 @@ router.register(r"collection_telemetry", DashboardTelemetryViewSet, basename="co
 router.register(r"leaderboard", DashboardLeaderboardsViewSet, basename="leaderboard")
 
 urlpatterns = [
+    # The router has no list route for template_metadata (no list/create), so PATCH-all is mapped explicitly.
+    path(
+        "api/v1/dashboard_reports/template_metadata/",
+        TemplateMetadataViewSet.as_view({"patch": "partial_update_all"}),
+        name="template_metadata-partial-update-all",
+    ),
     path(
         "api/v1/dashboard_reports/",
         include((router.urls, "dashboard_reports"), namespace="v1"),

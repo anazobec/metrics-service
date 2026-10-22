@@ -299,6 +299,17 @@ class TemplateMetadataSerializer(serializers.ModelSerializer):
         ]
 
 
+class TemplateMetadataBulkUpdateSerializer(TemplateMetadataSerializer):
+    """Serializer for bulk template metadata updates; unlike the per-record one, null values are rejected."""
+
+    time_taken_manually_execute_minutes = serializers.IntegerField(
+        min_value=0, help_text="Estimated time to perform this task manually (minutes)"
+    )
+    time_taken_create_automation_minutes = serializers.IntegerField(
+        min_value=0, help_text="Estimated time spent creating this automation (minutes)"
+    )
+
+
 class FilterSetSerializer(serializers.ModelSerializer):
     """Serializer for FilterSet, exposing name, filter criteria, and default flag."""
 

@@ -1,6 +1,6 @@
 """
 Unit tests for TemplateMetadata viewset, serializer, and URL routing.
-All DB interaction is mocked — no real writes occur.
+DB interaction is mostly mocked; TestTemplateMetadataBulkUpdate uses the test DB.
 """
 
 from unittest.mock import MagicMock, patch
@@ -338,3 +338,60 @@ class TestTemplateMetadataUrls(TestCase):
     def test_post_not_mapped(self):
         match = resolve("/api/v1/dashboard_reports/template_metadata/1/")
         assert "post" not in match.func.actions
+
+
+@pytest.mark.unit
+@pytest.mark.django_db
+class TestTemplateMetadataBulkUpdate:
+    url = "/api/v1/dashboard_reports/template_metadata/"
+
+    def test_updates_all_partially(self, admin_client):
+        for i in (1, 2):
+            TemplateMetadata.objects.create(
+                template_id=i,
+                template_name=f"t{i}",
+                time_taken_manually_execute_minutes=1,
+                time_taken_create_automation_minutes=2,
+            )
+        response = admin_client.patch(self.url, {"time_taken_manually_execute_minutes": 30}, format="json")
+        assert response.status_code == 200
+        assert response.json() == {"updated": 2}
+        for row in TemplateMetadata.objects.all():
+            assert row.time_taken_manually_execute_minutes == 30
+            assert row.time_taken_create_automation_minutes == 2
+
+    def test_updates_modified_and_modified_by(self, admin_client, admin_user):
+        row = TemplateMetadata.objects.create(template_id=1, template_name="t1")
+        old_modified = row.modified
+        response = admin_client.patch(self.url, {"time_taken_manually_execute_minutes": 30}, format="json")
+        assert response.status_code == 200
+        row.refresh_from_db()
+        assert row.modified > old_modified
+        assert row.modified_by == admin_user
+
+    def test_empty_body_rejected(self, admin_client):
+        assert admin_client.patch(self.url, {}, format="json").status_code == 400
+
+    def test_negative_rejected(self, admin_client):
+        response = admin_client.patch(self.url, {"time_taken_create_automation_minutes": -1}, format="json")
+        assert response.status_code == 400
+
+    def test_null_rejected(self, admin_client):
+        row = TemplateMetadata.objects.create(template_id=1, template_name="t1", time_taken_manually_execute_minutes=5)
+        response = admin_client.patch(self.url, {"time_taken_manually_execute_minutes": None}, format="json")
+        assert response.status_code == 400
+        row.refresh_from_db()
+        assert row.time_taken_manually_execute_minutes == 5
+
+    def test_put_not_allowed(self, admin_client):
+        assert admin_client.put(self.url, {}, format="json").status_code == 405
+
+    def test_regular_user_forbidden(self, api_client, rando):
+        api_client.force_authenticate(rando)
+        response = api_client.patch(self.url, {"time_taken_manually_execute_minutes": 30}, format="json")
+        assert response.status_code == 403
+
+    def test_platform_auditor_forbidden(self, api_client, platform_auditor):
+        api_client.force_authenticate(platform_auditor)
+        response = api_client.patch(self.url, {"time_taken_manually_execute_minutes": 30}, format="json")
+        assert response.status_code == 403

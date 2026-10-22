@@ -164,14 +164,6 @@ class TestTeamRoleAccess:
 
 
 @pytest.fixture
-def platform_auditor(db, rando):
-    """Assign the Platform Auditor global role to rando and return the user."""
-    auditor_rd = RoleDefinition.objects.get(name="Platform Auditor")
-    auditor_rd.give_global_permission(rando)
-    return rando
-
-
-@pytest.fixture
 def auditor_api_client(platform_auditor):
     """API client authenticated as a Platform Auditor."""
     client = APIClient()
