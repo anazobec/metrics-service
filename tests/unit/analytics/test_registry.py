@@ -80,7 +80,9 @@ def test_payload_schemas_follow_collector_variants():
     assert "ansible_host_variable" not in _item_types("controller.job_host_summary_service")
 
     for name in ("controller.events_table", "controller.main_jobevent_service"):
-        assert {"collection_name", "collection_version"} <= set(_item_types(name))
+        assert {"collection_name", "collection_version"}.isdisjoint(_item_types(name))
+    for name in ("controller.main_host", "controller.main_host_daily"):
+        assert _item_types(name)["first_automation"] == "datetime"
     assert "main_jobhostsummary_id" in _item_types("controller.main_jobevent")
 
     audit = _item_types("controller.main_indirectmanagednodeaudit")

@@ -14781,16 +14781,6 @@
                         "nullable": true,
                         "description": "Fully-qualified module or action name resolved by Ansible."
                     },
-                    "collection_name": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Collection namespace.name parsed from resolved_action, when it is a FQCN."
-                    },
-                    "collection_version": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Version of collection_name installed for the job, when known."
-                    },
                     "resolved_role": {
                         "type": "string",
                         "nullable": true
@@ -15664,6 +15654,12 @@
                         "nullable": true,
                         "description": "Creation time of the host's most recent job."
                     },
+                    "first_automation": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true,
+                        "description": "First automation time recorded for this host."
+                    },
                     "ansible_host_variable": {
                         "type": "string",
                         "nullable": true,
@@ -15905,16 +15901,6 @@
                         "type": "string",
                         "nullable": true,
                         "description": "Fully-qualified module or action name resolved by Ansible."
-                    },
-                    "collection_name": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Collection namespace.name parsed from resolved_action, when it is a FQCN."
-                    },
-                    "collection_version": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Version of collection_name installed for the job, when known."
                     },
                     "resolved_role": {
                         "type": "string",
