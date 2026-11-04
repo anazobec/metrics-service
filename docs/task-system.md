@@ -145,7 +145,7 @@ without redeploying task definitions.
 |----------|-----------|
 | System | `hello_world`, `cleanup_old_tasks`, `sync_resources_from_gateway`, `cleanup_activitystream`, `cleanup_metrics_data` |
 | Collectors | `collect_hourly_metrics`, `collect_snapshot_metrics`, `collect_daily_metrics`, `daily_metrics_rollup`, `daily_anonymize_and_prepare`, `send_anonymized_to_segment` |
-| Dashboard | `collect_dashboard_reports_initial_data`, `sync_dashboard_job_records`, `sync_dashboard_host_summaries`, cleanup tasks |
+| Dashboard | `collect_dashboard_reports_initial_data`, `sync_dashboard_job_records`, `sync_dashboard_host_summaries`, `sync_dashboard_on_demand`, cleanup tasks |
 
 `TASK_METADATA` provides queue routing, descriptions, and API documentation.
 `TASK_LOCKS` lists functions that acquire PostgreSQL advisory locks during

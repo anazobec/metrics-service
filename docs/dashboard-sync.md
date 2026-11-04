@@ -186,6 +186,31 @@ collections are large or workers are slow.
 - Tasks carry `_feature_flag: DASHBOARD_COLLECTION`
 - Stale pending chunks from prior runs are deleted when chunk count shrinks
 
+### On-demand sync
+
+`sync_dashboard_on_demand` lets an operator refresh dashboard data without waiting for the
+hourly cycle. Trigger it via `POST /api/v1/tasks/schedule_immediate/` with `"function_name": "sync_dashboard_on_demand"`.
+It is in `TASK_FUNCTIONS` only (not in `task_groups.py`).
+
+- Requires `DASHBOARD_COLLECTION` to be enabled (checked at run time). If disabled, the task
+  returns `status: error` without collecting or writing anything.
+- Optional `task_data`: `since` (inclusive) and `until` (exclusive), ISO timestamps.
+- Without `since`, the window starts at the latest `JobData.finished` timestamp (retention window
+  if empty); `until` defaults to now. Pass `since` explicitly when that default would exceed the cap.
+- The range is capped at 7 days. Longer ranges (including the default when `JobData` is empty,
+  which spans the retention window) return `status: error`; narrow `since`/`until`, or use
+  `collect_dashboard_reports_initial_data` for first-time backfills.
+- Runs inline, in daily sub-windows: collect `unified_jobs_dashboard`, run
+  `sync_dashboard_job_records`, then collect `job_host_summary_service` and run
+  `sync_dashboard_host_summaries`. Same upserts as the hooks, so reruns are idempotent.
+- Records one `sync_dashboard_on_demand` telemetry row per run (including failed or rejected
+  runs); the inner writers' telemetry is suppressed so hourly task telemetry isn't skewed.
+- The advisory lock is keyed by task name, so it only prevents two on-demand runs at once. It
+  does not serialise against the hourly `sync_dashboard_*` tasks; that is safe because all writers upsert.
+- Any failure stops the run and returns `status: error` with the failing window; the result
+  includes `date_range`, `job_count`, `host_summary_job_count` and `synced_until` (end of the last
+  fully synced window; pass it as `since` to resume). Progress is logged after each window.
+
 ### Deprecated incremental task
 
 `collect_dashboard_reports_data` performed scheduled incremental sync from
