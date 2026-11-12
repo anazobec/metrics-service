@@ -14,11 +14,13 @@ from apps.dashboard_reports.tasks import (
     DEFAULT_RETENTION_DAYS,
     _collect_data,
     _collect_jobs,
-    _get_job_id_range,
     _get_renamed_kwarg,
+    _iter_job_pages,
+    _PageStats,
     _parse_dt,
     _process_batches,
     _resolve_collection_params,
+    _store_dashboard_page,
     _sync_jobs_atomically,
     backfill_dashboard_job_types,
     backfill_dashboard_organization_names,
@@ -28,6 +30,7 @@ from apps.dashboard_reports.tasks import (
     get_retention_days,
     sync_dashboard_host_summaries,
     sync_dashboard_job_records,
+    update_dashboard_job_definition,
 )
 
 
@@ -120,51 +123,31 @@ def mock_collect_data_deps():
     with (
         patch("apps.dashboard_reports.tasks._resolve_collection_params") as mock_params,
         patch("apps.dashboard_reports.tasks.get_db_connection") as mock_db_conn,
-        patch("apps.dashboard_reports.tasks._get_job_id_range") as mock_id_range,
         patch("apps.dashboard_reports.tasks._process_batches") as mock_batches,
         patch("apps.dashboard_reports.tasks.log_task_execution") as mock_log,
     ):
         mock_params.return_value = (since, until, 5000)
         mock_db_conn.return_value = MagicMock()
-        mock_id_range.return_value = (100, 200)
         mock_batches.return_value = (42, None)
-        yield mock_params, mock_db_conn, mock_id_range, mock_batches, mock_log, since, until
+        yield mock_params, mock_db_conn, mock_batches, mock_log, since, until
 
 
 @pytest.mark.unit
 class TestCollectJobs:
     """Tests for the _collect_jobs helper."""
 
-    @patch("apps.dashboard_reports.tasks.dashboard_jobs")
-    def test_passes_all_args_to_dashboard_jobs(self, mock_dashboard_jobs):
-        """_collect_jobs forwards all keyword args including pagination params."""
+    @patch("apps.dashboard_reports.tasks.unified_jobs_dashboard")
+    def test_passes_all_args_to_unified_jobs_dashboard(self, mock_collector):
+        """_collect_jobs forwards the window and the cursor pagination params."""
         db_connection = MagicMock()
         since = datetime(2024, 1, 1, tzinfo=UTC)
         until = datetime(2024, 2, 1, tzinfo=UTC)
-        expected_result = MagicMock()
-        mock_dashboard_jobs.return_value.gather.return_value = expected_result
+        mock_collector.return_value.gather.return_value = "page"
 
         result = _collect_jobs(db_connection, since, until, after_id=50, batch_size=100)
 
-        mock_dashboard_jobs.assert_called_once_with(
-            db=db_connection, since=since, until=until, after_id=50, batch_size=100, date_field="finished"
-        )
-        mock_dashboard_jobs.return_value.gather.assert_called_once()
-        assert result == expected_result
-
-    @patch("apps.dashboard_reports.tasks.dashboard_jobs")
-    def test_defaults_pagination_params_to_none(self, mock_dashboard_jobs):
-        """_collect_jobs defaults after_id and batch_size to None."""
-        db_connection = MagicMock()
-        since = datetime(2024, 1, 1, tzinfo=UTC)
-        until = datetime(2024, 2, 1, tzinfo=UTC)
-        mock_dashboard_jobs.return_value.gather.return_value = {}
-
-        _collect_jobs(db_connection, since, until)
-
-        mock_dashboard_jobs.assert_called_once_with(
-            db=db_connection, since=since, until=until, after_id=None, batch_size=None, date_field="finished"
-        )
+        mock_collector.assert_called_once_with(db=db_connection, since=since, until=until, after_id=50, batch_size=100)
+        assert result == "page"
 
 
 @pytest.mark.unit
@@ -173,7 +156,7 @@ class TestCollectData:
 
     def test_success_returns_job_count(self, mock_collect_data_deps):
         """_collect_data returns correct job_count on success."""
-        _, _, _, _, _, since, until = mock_collect_data_deps
+        _, _, _, _, since, until = mock_collect_data_deps
         result = _collect_data("test_task")
         assert result["error"] is False
         assert result["data"]["job_count"] == 42
@@ -202,19 +185,9 @@ class TestCollectData:
         assert result["error"] is True
         assert "Database error" in result["message"]
 
-    def test_no_jobs_in_range_returns_zero_count(self, mock_collect_data_deps):
-        """_collect_data returns job_count=0 when min_id is None (no jobs in window)."""
-        _, _, mock_id_range, *_ = mock_collect_data_deps
-        mock_id_range.return_value = (None, None)
-
-        result = _collect_data("test_task")
-
-        assert result["error"] is False
-        assert result["data"]["job_count"] == 0
-
     def test_batch_error_propagates(self, mock_collect_data_deps):
         """_collect_data returns error when _process_batches reports a failure."""
-        _, _, _, mock_batches, *_ = mock_collect_data_deps
+        _, _, mock_batches, *_ = mock_collect_data_deps
         mock_batches.return_value = (0, "Collecting jobs failed: timeout")
 
         result = _collect_data("test_task")
@@ -231,18 +204,6 @@ class TestCollectData:
 
         assert result["error"] is True
         assert "BACKFILL_BATCH_SIZE" in result["message"]
-
-    def test_cursor_starts_at_min_id_minus_one(self, mock_collect_data_deps):
-        """_collect_data always starts batching from min_id - 1 (safe cursor for concurrent writes)."""
-        _, _, mock_id_range, mock_batches, *_ = mock_collect_data_deps
-        mock_id_range.return_value = (500, 1000)
-
-        _collect_data("test_task")
-
-        call_kwargs = mock_batches.call_args
-        # after_id is the 4th positional arg: (db_connection, since, until, max_id, after_id, ...)
-        after_id_arg = call_kwargs[0][4]
-        assert after_id_arg == 499  # min_id - 1
 
 
 @pytest.mark.unit
@@ -1066,139 +1027,97 @@ class TestGetRetentionDays:
 
 
 # ---------------------------------------------------------------------------
-# _get_job_id_range
+# _iter_job_pages / _process_batches
 # ---------------------------------------------------------------------------
+def _page(*rows):
+    """Build a unified_jobs_dashboard-like DataFrame from (id, status, launch_type) tuples."""
+    import pandas as pd
+
+    return pd.DataFrame(
+        [
+            {"id": i, "status": status, "launch_type": launch_type, "model": "job", "name": f"job {i}"}
+            for i, status, launch_type in rows
+        ]
+    )
+
+
 @pytest.mark.unit
-class TestGetJobIdRange:
-    """Tests for _get_job_id_range — mocks both the query builder and DB cursor."""
-
-    def _mock_db(self, fetchone_return):
-        """Return a mock DB connection whose cursor context manager yields fetchone_return."""
-        db = MagicMock()
-        cursor_ctx = MagicMock()
-        cursor_ctx.__enter__ = MagicMock(return_value=cursor_ctx)
-        cursor_ctx.__exit__ = MagicMock(return_value=False)
-        cursor_ctx.fetchone.return_value = fetchone_return
-        db.cursor.return_value = cursor_ctx
-        return db
-
-    def test_returns_min_max_when_row_exists(self):
-        """_get_job_id_range returns (min_id, max_id) from the cursor row."""
-        since = datetime(2024, 1, 1, tzinfo=UTC)
-        until = datetime(2024, 2, 1, tzinfo=UTC)
-        db = self._mock_db(fetchone_return=(100, 999))
-
-        with patch(
-            "metrics_utility.library.collectors.dashboard.get_min_max_job_id_query",
-            create=True,
-            return_value=("SELECT 1", []),
-        ):
-            result = _get_job_id_range(db, since, until)
-
-        assert result == (100, 999)
-
-    def test_returns_none_none_when_no_rows(self):
-        """_get_job_id_range returns (None, None) when cursor returns nothing."""
-        since = datetime(2024, 1, 1, tzinfo=UTC)
-        until = datetime(2024, 2, 1, tzinfo=UTC)
-        db = self._mock_db(fetchone_return=None)
-
-        with patch(
-            "metrics_utility.library.collectors.dashboard.get_min_max_job_id_query",
-            create=True,
-            return_value=("SELECT 1", []),
-        ):
-            result = _get_job_id_range(db, since, until)
-
-        assert result == (None, None)
-
-
-# ---------------------------------------------------------------------------
-# _process_batches
-# ---------------------------------------------------------------------------
-@pytest.mark.unit
-class TestProcessBatches:
-    """Tests for _process_batches — mocks _collect_jobs and _sync_jobs_atomically."""
+class TestIterJobPages:
+    """Tests for the cursor pagination of _iter_job_pages."""
 
     _since = datetime(2024, 1, 1, tzinfo=UTC)
     _until = datetime(2024, 2, 1, tzinfo=UTC)
 
-    def _call(self, after_id, max_id, collect_side_effect=None, sync_return=None):
-        """Invoke _process_batches with mocked _collect_jobs and _sync_jobs_atomically."""
-        db = MagicMock()
+    def test_advances_cursor_and_stops_on_short_page(self):
+        """The cursor moves to the page's max id and a short page ends the iteration."""
+        pages = [_page((1, "successful", "manual"), (5, "running", "sync")), _page((9, "failed", "workflow"))]
+        with patch("apps.dashboard_reports.tasks._collect_jobs", side_effect=pages) as mock_collect:
+            result = list(_iter_job_pages(MagicMock(), self._since, self._until, 2))
+        assert len(result) == 2
+        assert [c.args[3] for c in mock_collect.call_args_list] == [0, 5]
+
+    def test_empty_first_page_yields_nothing(self):
+        """No jobs in the window yields no pages."""
+        with patch("apps.dashboard_reports.tasks._collect_jobs", return_value=_page()):
+            assert list(_iter_job_pages(MagicMock(), self._since, self._until, 2)) == []
+
+    def test_non_terminal_rows_still_count_towards_page_size(self):
+        """A full page of running jobs does not end pagination early."""
+        pages = [_page((1, "running", "manual"), (2, "running", "manual")), _page((3, "successful", "manual"))]
+        with patch("apps.dashboard_reports.tasks._collect_jobs", side_effect=pages):
+            assert len(list(_iter_job_pages(MagicMock(), self._since, self._until, 2))) == 2
+
+
+@pytest.mark.unit
+class TestProcessBatches:
+    """Tests for _process_batches — mocks the page iterator and the page store."""
+
+    _since = datetime(2024, 1, 1, tzinfo=UTC)
+    _until = datetime(2024, 2, 1, tzinfo=UTC)
+
+    def _call(self, pages, stats=None, store_side_effect=None):
+        """Invoke _process_batches with mocked pages and page storage."""
         with (
-            patch("apps.dashboard_reports.tasks._collect_jobs") as mock_collect,
-            patch("apps.dashboard_reports.tasks._sync_jobs_atomically") as mock_sync,
+            patch("apps.dashboard_reports.tasks._iter_job_pages", return_value=pages),
+            patch("apps.dashboard_reports.tasks._store_dashboard_page") as mock_store,
             patch("apps.dashboard_reports.tasks.log_task_execution"),
         ):
-            if collect_side_effect is not None:
-                mock_collect.side_effect = collect_side_effect
-            if sync_return is not None:
-                mock_sync.return_value = sync_return
-            result = _process_batches(db, self._since, self._until, max_id, after_id, 100, "test_task")
-        return result, mock_collect, mock_sync
+            mock_store.side_effect = store_side_effect or stats
+            return _process_batches(MagicMock(), self._since, self._until, 100, "test_task"), mock_store
 
-    def test_never_loops_when_cursor_at_max(self):
-        """No collection happens when after_id >= max_id."""
-        (total, err), mock_collect, _ = self._call(after_id=500, max_id=500)
-        assert total == 0
-        assert err is None
-        mock_collect.assert_not_called()
+    def test_no_pages(self):
+        """An empty window returns (0, None)."""
+        (total, err), mock_store = self._call(iter([]))
+        assert (total, err) == (0, None)
+        mock_store.assert_not_called()
 
-    def test_single_successful_batch(self):
-        """A single batch with results commits and returns (count, None)."""
-        batch = {"results": [{"id": 101}, {"id": 102}], "count": 2}
-        collect_side_effects = [batch, {"results": [], "count": 0}]
-
-        (total, err), _, _ = self._call(
-            after_id=99, max_id=200, collect_side_effect=collect_side_effects, sync_return=[]
-        )
-        assert err is None
-        assert total == 2
-
-    def test_empty_batch_breaks_loop(self):
-        """An empty results list causes the loop to break without error."""
-        batch = {"results": [], "count": 0}
-        (total, err), mock_collect, _ = self._call(after_id=99, max_id=200, collect_side_effect=[batch])
-        assert err is None
-        assert total == 0
-        mock_collect.assert_called_once()
+    def test_accumulates_processed_count(self):
+        """Processed counts of all pages are summed."""
+        (total, err), _ = self._call(iter([1, 2]), stats=[_PageStats(processed=2), _PageStats(processed=1)])
+        assert (total, err) == (3, None)
 
     def test_collect_exception_returns_error(self):
-        """An exception from _collect_jobs returns an error tuple."""
-        (total, err), _, _ = self._call(after_id=99, max_id=200, collect_side_effect=Exception("timeout"))
+        """An exception raised while collecting a page returns an error tuple."""
+
+        def broken():
+            raise Exception("timeout")
+            yield
+
+        (_, err), _ = self._call(broken())
         assert err is not None
         assert "Collecting jobs failed" in err
 
-    def test_failed_sync_returns_error(self):
-        """Failed jobs from _sync_jobs_atomically returns an error tuple."""
-        batch = {"results": [{"id": 101}], "count": 1}
-        (total, err), _, _ = self._call(after_id=99, max_id=200, collect_side_effect=[batch], sync_return=[101])
-        assert err is not None
+    def test_store_exception_returns_error(self):
+        """An exception raised while storing a page returns an error tuple."""
+        (_, err), _ = self._call(iter([1]), store_side_effect=Exception("boom"))
+        assert "Storing jobs failed" in err
+
+    def test_failed_jobs_abort_with_error(self):
+        """Failed jobs abort the backfill so it can be retried."""
+        (total, err), mock_store = self._call(iter([1, 2]), stats=[_PageStats(failed=[101]), _PageStats(processed=1)])
+        assert total == 0
         assert "Failed to sync" in err
-
-    def test_multi_batch_accumulates_count(self):
-        """Two successful batches accumulate total_synced correctly."""
-        batch1 = {"results": [{"id": 101}, {"id": 102}], "count": 2}
-        batch2 = {"results": [{"id": 103}], "count": 1}
-        empty = {"results": [], "count": 0}
-
-        (total, err), _, _ = self._call(
-            after_id=99, max_id=200, collect_side_effect=[batch1, batch2, empty], sync_return=[]
-        )
-        assert err is None
-        assert total == 3
-
-    def test_cursor_advances_to_max_id_of_previous_batch(self):
-        """The second _collect_jobs call receives after_id = max(ids) from the first batch."""
-        batch1 = {"results": [{"id": 101}, {"id": 105}], "count": 2}
-        empty = {"results": [], "count": 0}
-
-        _, mock_collect, _ = self._call(after_id=99, max_id=200, collect_side_effect=[batch1, empty], sync_return=[])
-
-        assert mock_collect.call_count == 2
-        second_call_kwargs = mock_collect.call_args_list[1][1]
-        assert second_call_kwargs["after_id"] == 105  # max id from batch1, not batch1["count"]
+        assert mock_store.call_count == 1
 
 
 @pytest.mark.unit

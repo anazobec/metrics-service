@@ -6,13 +6,13 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
+from apps.dashboard_reports.job_definition import serialize_dashboard_record
 from apps.tasks.collectors.collect_hourly_metrics import (
     _build_dashboard_host_summary_sync_hook,
     _build_dashboard_sync_hook,
     _build_host_summary_task_chunks,
     _get_hourly_collectors,
     _group_host_summary_rows,
-    _serialize_dashboard_record,
     _serialize_host_summary_record,
 )
 
@@ -86,12 +86,12 @@ class TestBuildDashboardSyncHook:
         mock_task.objects.update_or_create.assert_not_called()
 
     def test_hook_returns_early_when_no_terminal_jobs(self):
-        """If all jobs are pending/running, sync, or workflow launches, no Task is created."""
+        """If no job is in a terminal state, no Task is created."""
         df = _make_df(
             [
                 {"status": "running", "launch_type": "manual"},
-                {"id": 2, "status": "successful", "launch_type": "sync"},
-                {"id": 3, "status": "successful", "launch_type": "workflow"},
+                {"id": 2, "status": "running", "launch_type": "sync"},
+                {"id": 3, "status": "pending", "launch_type": "workflow"},
             ]
         )
         hook = self._enabled_hook()
@@ -99,14 +99,14 @@ class TestBuildDashboardSyncHook:
             hook(df)
         mock_task.objects.update_or_create.assert_not_called()
 
-    def test_hook_excludes_workflow_launch_type(self):
-        """Workflow child jobs are excluded — they have NULL launched_by_id and would inflate
-        Successful/Failed counts without appearing in Top 5 Users (AAP-74848)."""
+    def test_hook_stores_sync_and_workflow_launch_types(self):
+        """Sync and workflow jobs are stored with their launch_type; reports hide them at read time."""
         df = _make_df(
             [
                 {"id": 1, "status": "successful", "launch_type": "manual"},
                 {"id": 2, "status": "successful", "launch_type": "workflow"},
-                {"id": 3, "status": "failed", "launch_type": "workflow"},
+                {"id": 3, "status": "failed", "launch_type": "sync"},
+                {"id": 4, "status": "running", "launch_type": "workflow"},
             ]
         )
         hook = self._enabled_hook()
@@ -115,8 +115,11 @@ class TestBuildDashboardSyncHook:
             hook(df)
         mock_task.objects.update_or_create.assert_called_once()
         task_data = mock_task.objects.update_or_create.call_args[1]["defaults"]["task_data"]
-        synced_ids = [r["id"] for r in task_data["raw_jobs"]]
-        assert synced_ids == [1], "only the manual job should reach sync_dashboard_job_records"
+        assert [(r["id"], r["launch_type"]) for r in task_data["raw_jobs"]] == [
+            (1, "manual"),
+            (2, "workflow"),
+            (3, "sync"),
+        ]
 
     def test_hook_creates_task_for_terminal_non_sync_jobs(self):
         """Terminal non-sync jobs cause update_or_create to be called."""
@@ -255,26 +258,26 @@ class TestBuildDashboardSyncHook:
 
 @pytest.mark.unit
 class TestSerializeDashboardRecord:
-    """Branch-coverage tests for _serialize_dashboard_record."""
+    """Branch-coverage tests for serialize_dashboard_record."""
 
     def test_datetime_field_none_left_unchanged(self):
         """When a datetime field value is None the field is not modified (covers val-is-None branch)."""
         row = {"started": None, "finished": None, "created": None, "modified": None, "num_hosts": 5}
-        _serialize_dashboard_record(row)
+        serialize_dashboard_record(row)
         assert row["started"] is None
         assert row["num_hosts"] == 5
 
     def test_num_hosts_none_left_unchanged(self):
         """When num_hosts is None the field is not modified (covers is-not-None False branch)."""
         row = {"started": datetime(2024, 1, 1, tzinfo=UTC), "num_hosts": None}
-        _serialize_dashboard_record(row)
+        serialize_dashboard_record(row)
         assert row["num_hosts"] is None
         assert row["started"] == datetime(2024, 1, 1, tzinfo=UTC).isoformat()
 
     def test_datetime_already_a_string_has_no_isoformat(self):
         """A non-datetime value without isoformat is left unchanged (covers hasattr False branch)."""
         row = {"started": "2024-01-01T00:00:00+00:00", "num_hosts": 3}
-        _serialize_dashboard_record(row)
+        serialize_dashboard_record(row)
         assert row["started"] == "2024-01-01T00:00:00+00:00"
 
     def test_numpy_int_fields_coerced_to_python_int(self):
@@ -294,7 +297,7 @@ class TestSerializeDashboardRecord:
             "created": None,
             "modified": None,
         }
-        _serialize_dashboard_record(row)
+        serialize_dashboard_record(row)
         for field in ("id", "organization_id", "unified_job_template_id", "launched_by_id", "project_id", "num_hosts"):
             assert isinstance(row[field], int), f"{field}: expected int, got {type(row[field])}"
         assert isinstance(row["elapsed"], float)
@@ -315,7 +318,7 @@ class TestSerializeDashboardRecord:
             "created": None,
             "modified": None,
         }
-        _serialize_dashboard_record(row)
+        serialize_dashboard_record(row)
         assert row["organization_id"] is None
         assert row["unified_job_template_id"] is None
         assert row["launched_by_id"] is None

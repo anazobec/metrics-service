@@ -79,7 +79,7 @@ flowchart TD
     Sync["Scheduler periodic sync\nimmediate_tasks scan"]
     Queue["dispatcherd queue: dashboard"]
     Fn["collect_dashboard_reports_initial_data"]
-    AWX["AWX DB\ndashboard_jobs cursor batches"]
+    AWX["AWX DB\nunified_jobs_dashboard cursor batches"]
     Store["JobData.create_or_update_from_awx()\n+ labels + host summaries"]
     Done["Task status: completed"]
 
@@ -109,11 +109,40 @@ Implemented in `apps/dashboard_reports/tasks.py`:
 1. **Date window** — `since` defaults to `JobData.last_finished_timestamp()` or
    a retention window (default 90 days, or Controller `cleanup_jobs` schedule
    when `DASHBOARD_COLLECTION.USE_CONTROLLER_RETENTION` is enabled).
-2. **Query** — `metrics_utility.library.collectors.dashboard.dashboard_jobs`
-   against the AWX database.
-3. **Pagination** — cursor batches (`BACKFILL_BATCH_SIZE`, default 5000).
-4. **Write** — `JobData.create_or_update_from_awx()` with labels and host summaries.
-5. **Telemetry** — `DashboardTelemetry` row per run.
+2. **Query** — `metrics_utility.library.collectors.controller.unified_jobs_dashboard`
+   against the AWX database. This is the same collector the hourly hook reads.
+3. **Pagination** — cursor batches (`after_id` / `batch_size`; `BACKFILL_BATCH_SIZE`, default 5000).
+4. **Select** — `apps/dashboard_reports/job_definition.py` keeps `failed` and `successful`
+   jobs of every launch type (see [Job definition](#job-definition)).
+5. **Write** — `JobData.create_or_update_from_awx()` with labels and host summaries
+   (host summaries are fetched for `job` model rows).
+6. **Telemetry** — `DashboardTelemetry` row per run.
+
+## Job definition
+
+`apps/dashboard_reports/job_definition.py` is the single definition of which
+Controller jobs the dashboard stores and how raw rows are serialized. The hourly hook,
+the first-start backfill and the update task all use it, so they store the same jobs.
+
+- **Stored:** every unified job (`job`, `workflowjob`, `systemjob`, ...) with status
+  `failed` or `successful`, including `sync` and `workflow` launch types.
+- **Hidden at read time:** `JobData.launch_type` in `sync` / `workflow` is excluded by
+  `get_job_type_filter()` (`apps/dashboard_reports/filters.py`), which every report,
+  detail, export and leaderboard query uses. Rows with `launch_type IS NULL`
+  (stored before the field existed) stay visible until the update task fills them.
+
+### Update task: `update_dashboard_job_definition`
+
+One-time task (`cron=None`, run once after deploying the `launch_type` migration):
+
+- Re-reads the retention window (not the `JobData` watermark) through `unified_jobs_dashboard`
+  in cursor batches (`BACKFILL_BATCH_SIZE`, or the `batch_size` kwarg).
+- Fills `launch_type` / `job_type` of existing rows and adds jobs that were never stored,
+  upserting by `job_id`. Each batch commits independently.
+- Returns `processed`, `updated` (existing rows whose `launch_type` was unset), `added`
+  and `failed` counts in the task result. The `DashboardTelemetry` row stores
+  `processed` as `number_of_records_processed`, and `success=False` if any job failed.
+- Idempotent: a second run reports `updated=0` and `added=0`. If jobs failed, rerun it.
 
 ### Collection status API
 
@@ -135,7 +164,7 @@ flowchart TD
     subgraph xx05 ["XX:05 - unified_jobs"]
         C1["collect_hourly_metrics\ncollector_type=unified_jobs"]
         G1["unified_jobs_dashboard.gather()"]
-        F1["Filter: status failed/successful\nexclude sync/workflow launch"]
+        F1["Filter: status failed/successful\nall launch types"]
         H1["_build_dashboard_sync_hook"]
         T1["Create pending Tasks:\nsync_dashboard_job_records_{hour}_{chunk}"]
         C1 --> G1 --> F1 --> H1 --> T1

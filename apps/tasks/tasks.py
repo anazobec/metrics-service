@@ -29,6 +29,7 @@ from ..dashboard_reports.tasks import (
     collect_dashboard_reports_initial_data,
     sync_dashboard_host_summaries,
     sync_dashboard_job_records,
+    update_dashboard_job_definition,
 )
 
 # Import cleanup tasks
@@ -73,6 +74,7 @@ TASK_FUNCTIONS = {
     "collect_dashboard_reports_initial_data": collect_dashboard_reports_initial_data,
     "backfill_dashboard_organization_names": backfill_dashboard_organization_names,
     "backfill_dashboard_job_types": backfill_dashboard_job_types,
+    "update_dashboard_job_definition": update_dashboard_job_definition,
     "cleanup_dashboard_reports_old_data": cleanup_dashboard_reports_old_data,
     "cleanup_dashboard_telemetry": cleanup_dashboard_telemetry,
     "sync_dashboard_job_records": sync_dashboard_job_records,
@@ -92,6 +94,7 @@ TASK_LOCKS = {
     "collect_dashboard_reports_initial_data",
     "backfill_dashboard_organization_names",
     "backfill_dashboard_job_types",
+    "update_dashboard_job_definition",
     "cleanup_dashboard_reports_old_data",
     "cleanup_dashboard_telemetry",
     "sync_dashboard_job_records",
@@ -524,6 +527,20 @@ TASK_METADATA = {
             {"name": "Smaller batches", "data": {"batch_size": 500}},
         ],
     },
+    "update_dashboard_job_definition": {
+        "queue": "dashboard",
+        "category": _DASHBOARD_REPORTS_CATEGORY,
+        "description": "One-time update of the retention window to the unified dashboard job definition: fills launch_type and adds missing jobs",
+        "parameters": {
+            "batch_size": {
+                "type": "integer",
+                "default": 5000,
+                "description": "Number of Controller jobs processed per batch",
+                "min": 1,
+            },
+        },
+        "examples": [{"name": "Default", "data": {}}, {"name": "Smaller batches", "data": {"batch_size": 1000}}],
+    },
     "sync_dashboard_job_records": {
         "queue": "dashboard",
         "category": _DASHBOARD_REPORTS_CATEGORY,
@@ -665,6 +682,7 @@ __all__ = [
     "collect_dashboard_reports_initial_data",
     "backfill_dashboard_organization_names",
     "backfill_dashboard_job_types",
+    "update_dashboard_job_definition",
     "cleanup_dashboard_reports_old_data",
     "cleanup_dashboard_telemetry",
     "sync_dashboard_job_records",

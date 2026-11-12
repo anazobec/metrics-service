@@ -18,6 +18,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.request import Request
 from rest_framework.views import APIView
 
+from apps.dashboard_reports.job_definition import HIDDEN_LAUNCH_TYPES
 from apps.dashboard_reports.models import JobData, label_ids_to_job_data_ids
 
 FILTER_FIELDS: frozenset[str] = frozenset({"organization", "template", "label", "project"})
@@ -148,14 +149,18 @@ def get_or_filter_options(request: Request) -> dict[str, list[int]]:
 
 
 def get_job_type_filter(request: Request) -> models.Q:
-    """Filter by requested Controller models, treating unclassified legacy rows as jobs."""
+    """Filter by requested Controller models, treating unclassified legacy rows as jobs.
+
+    Sync and workflow launches are stored but hidden from every dashboard view; rows whose
+    launch_type is still NULL (not yet updated) stay visible.
+    """
     job_types = [value.strip() for value in request.query_params.getlist("job_type") if value.strip()]
     if not job_types:
         job_types = ["job"]
     job_type_filter = models.Q(job_type__in=job_types)
     if "job" in job_types:
         job_type_filter |= models.Q(job_type__isnull=True)
-    return job_type_filter
+    return job_type_filter & ~models.Q(launch_type__in=HIDDEN_LAUNCH_TYPES)
 
 
 def apply_or_filters(request: Request, queryset: QuerySet[JobData]) -> QuerySet[JobData]:

@@ -570,6 +570,13 @@ class JobData(CommonModel):
         help_text="Controller unified-job model name (for example, job or systemjob)",
     )
 
+    launch_type = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        help_text="Controller launch type (for example, manual, scheduled, sync, or workflow)",
+    )
+
     launched_by_id = models.IntegerField(
         null=True,
         blank=True,
@@ -676,6 +683,8 @@ class JobData(CommonModel):
         # value. Explicit None means the collector returned a null value and should clear it.
         if "job_type" in awx_job:
             defaults["job_type"] = awx_job["job_type"]
+        if "launch_type" in awx_job:
+            defaults["launch_type"] = awx_job["launch_type"]
 
         if default_job_type is not None and "job_type" not in awx_job:
             job_data, created = cls.objects.update_or_create(

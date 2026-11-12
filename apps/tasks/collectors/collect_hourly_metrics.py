@@ -6,12 +6,13 @@ and stores in HourlyMetricsCollection.
 """
 
 import logging
-import math
 from datetime import timedelta
 from typing import Any
 
 from django.conf import settings
 from django.utils import timezone
+
+from apps.dashboard_reports.job_definition import is_nan, prepare_dashboard_records, select_dashboard_jobs
 
 from ..utils import create_task_result, generic_collect_metrics, get_db_connection, parse_datetime_string
 
@@ -195,92 +196,6 @@ _HOST_SUMMARY_RECORD_CHUNK_SIZE = 2000  # max host summary records per sync_dash
 
 _HOST_SUMMARY_COLUMNS = ("id", "host_name", "host_remote_id", "job_remote_id")
 
-_DASHBOARD_COLUMNS = [
-    "id",
-    "name",
-    "model",
-    "unified_job_template_id",
-    "organization_id",
-    "organization_name",
-    "started",
-    "finished",
-    "status",
-    "elapsed",
-    "launched_by_id",
-    "launched_by_username",
-    "project_id",
-    "project_name",
-    "created",
-    "modified",
-    "label_ids",
-    "num_hosts",
-]
-
-
-_INT_FIELDS = ("id", "organization_id", "unified_job_template_id", "launched_by_id", "project_id", "num_hosts")
-_STRING_FIELDS = (
-    "name",
-    "model",
-    "organization_name",
-    "status",
-    "launched_by_username",
-    "project_name",
-    "label_ids",
-)
-
-
-def _is_nan(value: Any) -> bool:
-    """Return whether a value is a native float NaN requiring JSON normalization."""
-    return isinstance(value, float) and math.isnan(value)
-
-
-def _serialize_dashboard_datetime_fields(row: dict) -> None:
-    for field in ("started", "finished", "created", "modified"):
-        val = row.get(field)
-        if val is not None and hasattr(val, "isoformat"):
-            row[field] = val.isoformat()
-
-
-def _serialize_dashboard_integer_fields(row: dict) -> None:
-    # Pandas upcasts nullable integer columns to float64 when NaN is present.
-    # .where(notna(), other=None) can leave float NaN, so guard before int(nan).
-    for field in _INT_FIELDS:
-        val = row.get(field)
-        if val is None or _is_nan(val):
-            row[field] = None
-        else:
-            row[field] = int(val)
-
-
-def _serialize_dashboard_string_fields(row: dict) -> None:
-    # Entirely missing string columns can also arrive as float NaN from pandas.
-    for field in _STRING_FIELDS:
-        val = row.get(field)
-        if _is_nan(val):
-            row[field] = None
-
-
-def _serialize_dashboard_elapsed(row: dict) -> None:
-    val = row.get("elapsed")
-    if val is None or _is_nan(val):
-        row["elapsed"] = None
-    else:
-        row["elapsed"] = float(val)
-
-
-def _serialize_dashboard_record(row: dict) -> None:
-    """Coerce all non-serializable numpy/pandas types to Python natives in-place.
-
-    pandas .to_dict("records") preserves numpy dtypes (numpy.int64, numpy.float64) for
-    columns with no NaN values. DjangoJSONEncoder does not handle these, so storing raw
-    records in Task.task_data would raise TypeError. Nullable numeric and string fields
-    are normalized to None when pandas represents missing values as float NaN.
-    """
-    _serialize_dashboard_datetime_fields(row)
-    _serialize_dashboard_integer_fields(row)
-    _serialize_dashboard_string_fields(row)
-    _serialize_dashboard_elapsed(row)
-
 
 def _serialize_host_summary_record(row: dict) -> dict:
     """Coerce numpy/pandas types to Python natives for a single host summary row.
@@ -294,10 +209,10 @@ def _serialize_host_summary_record(row: dict) -> dict:
     result: dict = {}
     for field in ("id", "job_remote_id"):
         val = row.get(field)
-        result[field] = None if (val is None or _is_nan(val)) else int(val)
+        result[field] = None if (val is None or is_nan(val)) else int(val)
     # host_remote_id (AWX column) → host_id (canonical wire/model field name).
     val = row.get("host_remote_id")
-    result["host_id"] = None if (val is None or _is_nan(val)) else int(val)
+    result["host_id"] = None if (val is None or is_nan(val)) else int(val)
     result["host_name"] = str(row["host_name"]) if row.get("host_name") is not None else None
     return result
 
@@ -409,57 +324,6 @@ def _build_dashboard_host_summary_sync_hook(hour_timestamp):
     return hook
 
 
-def _get_dashboard_jobs_for_sync(raw_data):
-    """Return terminal, non-sync dashboard jobs or None when there is nothing to queue."""
-    if raw_data is None or raw_data.empty:
-        return None
-
-    mask = raw_data["status"].isin(["failed", "successful"]) & (~raw_data["launch_type"].isin(["sync", "workflow"]))
-    filtered = raw_data[mask]
-    return None if filtered.empty else filtered
-
-
-def _has_usable_dashboard_model(value: Any) -> bool:
-    """Return whether a collected dashboard model value can be persisted."""
-    return isinstance(value, str) and bool(value.strip())
-
-
-def _log_dashboard_model_gaps(filtered) -> None:
-    """Warn when dashboard rows need Controller model recovery during sync."""
-    if "model" not in filtered.columns:
-        return
-
-    invalid_models = ~filtered["model"].map(_has_usable_dashboard_model)
-    if invalid_models.any():
-        logger.warning(
-            "unified_jobs_dashboard returned %s rows without a usable model; the sync task will resolve them",
-            int(invalid_models.sum()),
-        )
-
-
-def _prepare_dashboard_sync_records(filtered) -> list[dict]:
-    """Select and serialize the dashboard columns from collected job rows."""
-    _log_dashboard_model_gaps(filtered)
-
-    # unified_jobs_dashboard guarantees these columns; guard with available
-    # in case a future schema change temporarily drops one.
-    available = [column for column in _DASHBOARD_COLUMNS if column in filtered.columns]
-    missing = set(_DASHBOARD_COLUMNS) - set(available)
-    if missing:
-        logger.warning(
-            "unified_jobs_dashboard is missing expected columns: %s",
-            sorted(missing),
-        )
-        if "model" in missing:
-            logger.warning("Dashboard job types will be resolved from Controller by job ID where possible")
-
-    subset = filtered[available]
-    records = subset.where(subset.notna(), other=None).to_dict("records")
-    for row in records:
-        _serialize_dashboard_record(row)
-    return records
-
-
 def _schedule_dashboard_sync_tasks(records: list[dict], hour_timestamp) -> None:
     """Upsert dashboard job sync chunks and remove stale pending chunks."""
     # Lazy import inside helper: Task must be resolved at call time so tests can
@@ -514,11 +378,11 @@ def _build_dashboard_sync_hook(hour_timestamp):
 
     def hook(raw_data):
         """Log model gaps and queue eligible dashboard job records for syncing."""
-        filtered = _get_dashboard_jobs_for_sync(raw_data)
+        filtered = select_dashboard_jobs(raw_data)
         if filtered is None:
             return
 
-        records = _prepare_dashboard_sync_records(filtered)
+        records = prepare_dashboard_records(filtered)
         _schedule_dashboard_sync_tasks(records, hour_timestamp)
 
     return hook
