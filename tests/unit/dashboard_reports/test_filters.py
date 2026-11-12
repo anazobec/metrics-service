@@ -19,7 +19,10 @@ from apps.dashboard_reports.filters import (
     get_job_type_filter,
     get_or_filter_options,
 )
+from apps.dashboard_reports.job_definition import HIDDEN_LAUNCH_TYPES
 from apps.dashboard_reports.viewsets.filter_options import FilterOptionsViewSet
+
+_HIDE_SYNC_WORKFLOW = ~models.Q(launch_type__in=HIDDEN_LAUNCH_TYPES)
 
 
 @pytest.mark.unit
@@ -678,7 +681,9 @@ class TestCustomReportFilter:
 
         mock_queryset.after_date.assert_called_once_with(None)
         mock_queryset.before_date.assert_called_once_with(None)
-        mock_queryset.filter.assert_called_once_with(models.Q(job_type__in=["job"]) | models.Q(job_type__isnull=True))
+        mock_queryset.filter.assert_called_once_with(
+            (models.Q(job_type__in=["job"]) | models.Q(job_type__isnull=True)) & _HIDE_SYNC_WORKFLOW
+        )
         mock_queryset.organizations.assert_called_once_with(None)
         mock_queryset.projects.assert_called_once_with(None)
         mock_queryset.templates.assert_called_once_with(None)
@@ -935,25 +940,33 @@ class TestGetJobTypeFilter:
         request = MagicMock()
         request.query_params = QueryDict("")
 
-        assert get_job_type_filter(request) == (models.Q(job_type__in=["job"]) | models.Q(job_type__isnull=True))
+        assert get_job_type_filter(request) == (
+            (models.Q(job_type__in=["job"]) | models.Q(job_type__isnull=True)) & _HIDE_SYNC_WORKFLOW
+        )
 
     def test_blank_values_default_to_job_model(self):
         """Treats empty and whitespace-only job_type parameters as an omitted filter."""
         request = MagicMock()
         request.query_params = QueryDict("job_type=&job_type=%20")
 
-        assert get_job_type_filter(request) == (models.Q(job_type__in=["job"]) | models.Q(job_type__isnull=True))
+        assert get_job_type_filter(request) == (
+            (models.Q(job_type__in=["job"]) | models.Q(job_type__isnull=True)) & _HIDE_SYNC_WORKFLOW
+        )
 
     def test_returns_all_requested_types(self):
         """Includes every repeated job_type query parameter in the filter."""
         request = MagicMock()
         request.query_params = QueryDict("job_type=systemjob&job_type=workflowjob")
 
-        assert get_job_type_filter(request) == models.Q(job_type__in=["systemjob", "workflowjob"])
+        assert get_job_type_filter(request) == (
+            models.Q(job_type__in=["systemjob", "workflowjob"]) & _HIDE_SYNC_WORKFLOW
+        )
 
     def test_explicit_job_type_includes_unclassified_rows(self):
         """Includes NULL legacy rows when callers explicitly request ordinary jobs."""
         request = MagicMock()
         request.query_params = QueryDict("job_type=job")
 
-        assert get_job_type_filter(request) == (models.Q(job_type__in=["job"]) | models.Q(job_type__isnull=True))
+        assert get_job_type_filter(request) == (
+            (models.Q(job_type__in=["job"]) | models.Q(job_type__isnull=True)) & _HIDE_SYNC_WORKFLOW
+        )

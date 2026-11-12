@@ -386,7 +386,10 @@ class TaskViewSet(BaseViewSet):
                 "description": metadata.get("description")
                 or (func.__doc__.split("\n")[1].strip() if func.__doc__ else "No description available"),
                 "category": metadata.get("category", "General"),
-                "parameters": metadata.get("parameters", {}),
+                "parameters": {
+                    name: {**spec, "default": spec["default"]()} if callable(spec.get("default")) else spec
+                    for name, spec in metadata.get("parameters", {}).items()
+                },
                 "examples": metadata.get("examples", []),
             }
 

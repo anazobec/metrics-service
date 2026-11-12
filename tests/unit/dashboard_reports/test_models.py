@@ -625,22 +625,6 @@ class TestCreateOrUpdateFromAwxHostSummaries:
         JobData.create_or_update_from_awx(job)
         mock_sync_host_summaries.assert_called_once()
 
-    @patch("apps.dashboard_reports.models.TemplateMetadata.get_by_awx_id_or_name", return_value=None)
-    @pytest.mark.django_db
-    def test_default_job_type_only_fills_missing_types(self, _mock_template_metadata):
-        """A source default fills new or NULL rows while preserving an existing Controller type."""
-        base_job = {**self._AWX_JOB, "labels": None, "host_summaries": None}
-        JobData.create_or_update_from_awx({**base_job, "id": 9003, "job_type": "systemjob"})
-        JobData.create_or_update_from_awx({**base_job, "id": 9003}, default_job_type="job")
-        assert JobData.objects.get(job_id=9003).job_type == "systemjob"
-
-        JobData.create_or_update_from_awx({**base_job, "id": 9004, "job_type": None})
-        JobData.create_or_update_from_awx({**base_job, "id": 9004}, default_job_type="job")
-        assert JobData.objects.get(job_id=9004).job_type == "job"
-
-        JobData.create_or_update_from_awx({**base_job, "id": 9005}, default_job_type="job")
-        assert JobData.objects.get(job_id=9005).job_type == "job"
-
 
 @pytest.mark.unit
 class TestCreateOrUpdateFromAwxLabels:

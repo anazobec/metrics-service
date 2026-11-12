@@ -154,6 +154,53 @@ class TestPerSecondSubscriptionCost:
         expected = (decimal.Decimal("2000") / decimal.Decimal("1000")).quantize(decimal.Decimal("0.0000000001"))
         assert result == expected
 
+    def test_hidden_launch_types_do_not_dilute_rate(self, subscription_cost, jobs_in_march):
+        """Sync and workflow launches are excluded; legacy NULL launch_type rows still count."""
+        for job_id, launch_type in ((2001, "sync"), (2002, "workflow"), (2003, None)):
+            JobData.objects.create(
+                job_id=job_id,
+                template_name="Test Template",
+                template_id=101,
+                status=JobStatusChoices.SUCCESSFUL,
+                started=datetime.datetime(2025, 3, 10, 10, 0, 0, tzinfo=datetime.UTC),
+                finished=datetime.datetime(2025, 3, 10, 10, 8, 20, tzinfo=datetime.UTC),
+                elapsed=decimal.Decimal("500"),
+                launch_type=launch_type,
+            )
+        start = datetime.datetime(2025, 3, 1, tzinfo=datetime.UTC)
+        end = datetime.datetime(2025, 3, 31, tzinfo=datetime.UTC)
+
+        result = subscription_cost.per_second_subscription_cost(start, end)
+
+        # 1500s counted (two march jobs + the NULL legacy row), not 2500s
+        assert result == (decimal.Decimal("2000") / decimal.Decimal("1500")).quantize(decimal.Decimal("0.0000000001"))
+
+    def test_non_job_models_do_not_dilute_rate(self, subscription_cost, jobs_in_march):
+        """Workflow, project update and other non-job models are excluded; NULL job_type counts as a job."""
+        for job_id, job_type in (
+            (2101, "workflowjob"),
+            (2102, "projectupdate"),
+            (2103, "inventoryupdate"),
+            (2104, None),
+        ):
+            JobData.objects.create(
+                job_id=job_id,
+                template_name="Test Template",
+                template_id=101,
+                status=JobStatusChoices.SUCCESSFUL,
+                started=datetime.datetime(2025, 3, 10, 10, 0, 0, tzinfo=datetime.UTC),
+                finished=datetime.datetime(2025, 3, 10, 10, 8, 20, tzinfo=datetime.UTC),
+                elapsed=decimal.Decimal("500"),
+                job_type=job_type,
+            )
+        start = datetime.datetime(2025, 3, 1, tzinfo=datetime.UTC)
+        end = datetime.datetime(2025, 3, 31, tzinfo=datetime.UTC)
+
+        result = subscription_cost.per_second_subscription_cost(start, end)
+
+        # 1500s counted (two march jobs + the NULL job_type row), not 3000s
+        assert result == (decimal.Decimal("2000") / decimal.Decimal("1500")).quantize(decimal.Decimal("0.0000000001"))
+
     def test_partial_month_weighted_cost(self, subscription_cost, jobs_in_march):
         start = datetime.datetime(2025, 3, 1, tzinfo=datetime.UTC)
         end = datetime.datetime(2025, 3, 15, tzinfo=datetime.UTC)

@@ -360,6 +360,14 @@ DASHBOARD_COLLECTION_GROUP = TaskGroup(
             "description": "Reconcile Controller model names for existing dashboard JobData rows",
         },
         {
+            "task_id": "update_dashboard_job_definition",
+            "function": "update_dashboard_job_definition",
+            "cron": None,  # No schedule, run once after install/upgrade
+            "args": {},
+            "enabled": True,
+            "description": "One-time update of existing dashboard JobData to the unified job definition (launch_type, missing jobs)",
+        },
+        {
             "task_id": "cleanup_dashboard_reports_old_data",
             "function": "cleanup_dashboard_reports_old_data",
             "cron": "30 5 * * *",  # Daily at 5:30 AM
