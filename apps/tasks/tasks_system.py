@@ -164,6 +164,37 @@ def _schedule_retry(task) -> None:
         )
 
 
+# One-shot functions whose time window must stay fixed across retries of the same Task row.
+_PINNED_WINDOW_FUNCTIONS = {"collect_dashboard_reports_initial_data", "update_dashboard_job_definition"}
+
+
+def _pin_collection_window(task) -> None:
+    """
+    Persist ``since`` and ``until`` in task_data on the first attempt of a one-shot windowed collection.
+
+    The function derives its window from ``until`` (default: now) and the current Controller retention, so
+    without this a retry hours later, possibly across UTC midnight or after a retention change, would
+    compute a different window and could skip unprocessed jobs. Recurring collectors get the same
+    guarantee from ``_inject_dispatch_timestamps``. Explicit bounds in task_data are left untouched.
+    """
+    from django.utils import timezone
+
+    from .models import Task
+
+    if task.function_name not in _PINNED_WINDOW_FUNCTIONS:
+        return
+    data = dict(task.task_data)
+    if not data.get("until"):
+        data["until"] = timezone.now().isoformat()
+    if not data.get("since"):
+        from apps.dashboard_reports.tasks import _parse_dt, _retention_window_start
+
+        data["since"] = _retention_window_start(_parse_dt(data["until"])).isoformat()
+    if data != task.task_data:
+        task.task_data = data
+        Task.objects.filter(id=task.id).update(task_data=data)
+
+
 def execute_claimed(task, execution):
     """Execute a task that has already been atomically claimed, handling retries and status updates."""
     # Import TASK_FUNCTIONS here to avoid circular import
@@ -180,6 +211,7 @@ def execute_claimed(task, execution):
 
     # Execute the actual task function, with advisory lock if required
     # Forwarding execution_id the task can link collections back to TaskExecution
+    _pin_collection_window(task)
     task_function = TASK_FUNCTIONS[task.function_name]
     locked = task.function_name in TASK_LOCKS
     result = execute_function(task, execution, task_function, locked)

@@ -3,6 +3,7 @@ Unit tests for apps/tasks/tasks_system.py.
 Targets 14.9% → ~90% coverage.
 """
 
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -169,6 +170,66 @@ def test_execute_claimed_task_failure_returns_error(user):
 
     assert result["status"] == "error"
     mock_fn.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.django_db
+@pytest.mark.parametrize("function_name", ["collect_dashboard_reports_initial_data", "update_dashboard_job_definition"])
+def test_one_shot_collection_window_is_pinned_across_retries(user, function_name):
+    """The first attempt stores `since`/`until`; a retry after midnight and a retention change reuses them."""
+    from apps.tasks.models import Task, TaskExecution
+    from apps.tasks.tasks_system import execute_claimed
+
+    task = Task.objects.create(name="initial", function_name=function_name, task_data={}, created_by=user)
+    seen = []
+    mock_fn = MagicMock(
+        side_effect=lambda **kw: seen.append((kw.get("since"), kw.get("until"))) or {"status": "error", "error": "x"}
+    )
+    first_until = datetime(2026, 11, 23, 23, 50, tzinfo=UTC)
+    first_since = datetime(2026, 8, 25, tzinfo=UTC)
+
+    with (
+        patch.dict("apps.tasks.tasks.TASK_FUNCTIONS", {function_name: mock_fn}),
+        patch("apps.tasks.tasks.TASK_LOCKS", set()),
+    ):
+        with (
+            patch("django.utils.timezone.now", return_value=first_until),
+            patch("apps.dashboard_reports.tasks._retention_window_start", return_value=first_since),
+        ):
+            execute_claimed(task, TaskExecution.objects.create(task=task, status="running", worker_id="w"))
+        task = Task.objects.get(pk=task.pk)
+        # retry after UTC midnight, with a shorter retention
+        with (
+            patch("django.utils.timezone.now", return_value=first_until + timedelta(hours=1)),
+            patch(
+                "apps.dashboard_reports.tasks._retention_window_start", return_value=datetime(2026, 10, 25, tzinfo=UTC)
+            ),
+        ):
+            execute_claimed(task, TaskExecution.objects.create(task=task, status="running", worker_id="w"))
+
+    expected = (first_since.isoformat(), first_until.isoformat())
+    assert seen == [expected, expected]
+    stored = Task.objects.get(pk=task.pk).task_data
+    assert (stored["since"], stored["until"]) == expected
+
+
+@pytest.mark.unit
+@pytest.mark.django_db
+def test_explicit_bounds_and_other_functions_are_not_pinned(user):
+    """Explicit `since`/`until` are kept and unrelated functions get no window."""
+    from apps.tasks.models import Task
+    from apps.tasks.tasks_system import _pin_collection_window
+
+    bounds = {"since": "2024-01-01T00:00:00+00:00", "until": "2024-02-01T00:00:00+00:00"}
+    explicit = Task.objects.create(
+        name="e", function_name="collect_dashboard_reports_initial_data", task_data=dict(bounds), created_by=user
+    )
+    other = Task.objects.create(name="o", function_name="hello_world", task_data={}, created_by=user)
+    _pin_collection_window(explicit)
+    _pin_collection_window(other)
+
+    assert explicit.task_data == bounds
+    assert other.task_data == {}
 
 
 # ---------------------------------------------------------------------------

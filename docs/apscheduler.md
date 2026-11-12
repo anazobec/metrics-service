@@ -138,6 +138,11 @@ time-window keys so retries collect the originally intended window:
 Keys are only set when absent, so manually created tasks with explicit timestamps
 are unchanged.
 
+One-shot `collect_dashboard_reports_initial_data` and `update_dashboard_job_definition` have no recurring parent to inject from. The task
+executor (`_pin_collection_window()` in `execute_claimed`) stores `since` and `until` in the task's `task_data`
+on the first attempt, so every retry of that Task row resolves the same retention window, even across
+UTC midnight or a Controller retention change.
+
 ## Periodic Sync Pipeline
 
 `_periodic_database_sync()` runs on the interval job. Simplified flow:

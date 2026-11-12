@@ -80,6 +80,18 @@ def test_available_functions_lists_functions(perm_client):
     assert any(f["name"] == "hello_world" for f in data["functions"])
 
 
+@pytest.mark.unit
+@pytest.mark.django_db
+def test_available_functions_batch_size_default_follows_setting(perm_client, settings):
+    """The advertised batch_size default is the configured BACKFILL_BATCH_SIZE, not a constant."""
+    settings.DASHBOARD_COLLECTION = {"BACKFILL_BATCH_SIZE": 1234}
+
+    response = perm_client.get("/api/v1/tasks/available_functions/")
+
+    function = next(f for f in response.json()["functions"] if f["name"] == "update_dashboard_job_definition")
+    assert function["parameters"]["batch_size"]["default"] == 1234
+
+
 # ---------------------------------------------------------------------------
 # scheduler_status endpoint
 # ---------------------------------------------------------------------------

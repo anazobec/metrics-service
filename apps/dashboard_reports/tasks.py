@@ -4,6 +4,7 @@ Background tasks for dashboard reports data collection and cleanup.
 Provides dispatcherd tasks:
 - collect_dashboard_reports_initial_data: full historical backfill (window from the Controller's retention schedule, default 90 days)
 - backfill_dashboard_organization_names: one-time fix of JobData rows missing organization_name
+- update_dashboard_job_definition: one-time update of the retention window to the unified dashboard job definition
 - collect_dashboard_reports_data: incremental sync from last known timestamp (deprecated)
 - sync_dashboard_job_records: writes unified_jobs data from the hourly hook to JobData
 - sync_dashboard_host_summaries: writes host summary data from the hourly hook to JobHostSummary
@@ -15,24 +16,25 @@ import logging
 import math
 import time
 from collections.abc import Iterator
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Case, CharField, QuerySet, Value, When
-from metrics_utility.library.collectors.dashboard import (
-    DashboardJobsResultType,
-    dashboard_jobs,
-)
+from metrics_utility.library.collectors.controller import unified_jobs_dashboard
+from metrics_utility.library.collectors.dashboard.queries import get_job_host_summaries_for_ids_query
 
 from apps.dashboard_reports.awx_queries import fetch_job_types_for_ids, fetch_organizations, fetch_retention_settings
-from apps.dashboard_reports.models import DashboardTelemetry, JobData, JobHostSummary
+from apps.dashboard_reports.job_definition import prepare_dashboard_records, select_dashboard_jobs
+from apps.dashboard_reports.models import DashboardTelemetry, JobData, JobHostSummary, TemplateMetadata
 from apps.tasks.retention import DEFAULT_RETENTION_DAYS, _parse_dt, resolve_retention_days
 from apps.tasks.utils import create_task_result, get_db_connection, ignore_database_override, log_task_execution
 
 ORG_NAME_BACKFILL_BATCH_SIZE = 5_000
 JOB_TYPE_BACKFILL_BATCH_SIZE = 2_000
+DEFAULT_BACKFILL_BATCH_SIZE = 5_000
 
 logger = logging.getLogger(__name__)
 
@@ -100,38 +102,120 @@ def get_retention_days() -> int:
     return retention_days
 
 
-def _collect_jobs(
-    db_connection, since: datetime, until: datetime, after_id: int | None = None, batch_size: int | None = None
-) -> DashboardJobsResultType:
+def _collect_jobs(db_connection, since: datetime, until: datetime, after_id: int, batch_size: int):
     """
-    Collect dashboard jobs data from the database for the specified date range.
+    Return one ID-ordered page of unified job rows finished in ``[since, until)`` as a DataFrame.
 
-    When *after_id* and *batch_size* are both supplied the underlying query uses
-    cursor-based pagination (``id > after_id ORDER BY id LIMIT batch_size``) and
-    labels/host-summaries are fetched by the returned job IDs rather than the
-    full date range, which is far more efficient for large backfills.
+    Uses cursor-based pagination (``id > after_id ORDER BY id LIMIT batch_size``) so memory and
+    transaction times stay bounded for large windows. This is the same collector the hourly hook
+    reads, so the backfill and the hook see identical rows.
     """
-    return dashboard_jobs(
-        db=db_connection, since=since, until=until, after_id=after_id, batch_size=batch_size, date_field="finished"
+    return unified_jobs_dashboard(
+        db=db_connection, since=since, until=until, after_id=after_id, batch_size=batch_size
     ).gather()
 
 
-def _get_job_id_range(db_connection, since: datetime, until: datetime) -> tuple:
-    """Return (min_id, max_id) for jobs matching the backfill filter, or (None, None) if empty."""
-    # Lazy import: keeps metrics_utility optional at module level so unrelated tasks
-    # (hello_world, cleanup_old_tasks) can be registered without the dependency installed.
-    from metrics_utility.library.collectors.dashboard import get_min_max_job_id_query
+def _iter_job_pages(db_connection, since: datetime, until: datetime, batch_size: int) -> Iterator[Any]:
+    """Yield raw unified job pages until the window is exhausted."""
+    after_id = 0
+    while True:
+        page = _collect_jobs(db_connection, since, until, after_id, batch_size)
+        if page is None or page.empty:
+            return
+        yield page
+        # A short page is the last one; the raw size is used because the dashboard job filter
+        # is applied after pagination.
+        if len(page) < batch_size:
+            return
+        after_id = int(page["id"].max())
 
-    query, params = get_min_max_job_id_query(since, until, date_field="finished")
+
+def _fetch_host_summaries(db_connection, job_ids: list[int]) -> dict[int, list[dict]]:
+    """Return the Controller host summaries of the given jobs, keyed by job ID."""
+    if not job_ids:
+        return {}
+    query, params = get_job_host_summaries_for_ids_query(job_ids)
+    summaries: dict[int, list[dict]] = {}
     with db_connection.cursor() as cursor:
         cursor.execute(query, params)
-        row = cursor.fetchone()
-    if row is None:
-        return None, None
-    return row[0], row[1]
+        for summary_id, host_name, host_id, job_id in cursor:
+            summaries.setdefault(job_id, []).append({"id": summary_id, "host_id": host_id, "host_name": host_name})
+    return summaries
 
 
-def _sync_jobs_atomically(job_results: list, default_job_type: str | None = None) -> list:
+@dataclass
+class _PageStats:
+    """Outcome of storing one page of dashboard jobs."""
+
+    processed: int = 0
+    added: int = 0
+    updated: int = 0
+    failed: list[int] = field(default_factory=list)
+
+
+def _store_dashboard_page(db_connection, page, task_name: str) -> _PageStats:
+    """
+    Select the dashboard jobs of a raw page and upsert them into JobData by ``job_id``.
+
+    Shared by the initial backfill and the job definition update task. ``added`` counts rows that did
+    not exist yet and ``updated`` counts existing rows whose ``launch_type`` was unset and is now filled. When
+    any job fails, or the Controller model lookup fails, the whole page is rolled back and every job ID of
+    the page is returned in ``failed``. ``task_name`` attributes the lookup errors to the calling task.
+    """
+    filtered = select_dashboard_jobs(page)
+    if filtered is None:
+        return _PageStats()
+
+    records = prepare_dashboard_records(filtered)
+    # Same model recovery as the hourly hook, so both paths classify rows the same way.
+    if _resolve_dashboard_job_models(records, task_name):
+        return _PageStats(failed=[record["id"] for record in records])
+    jobs = [_assemble_dashboard_job(record) for record in records]
+
+    # Only the "job" model has host summaries; other unified job types never do.
+    host_summaries = _fetch_host_summaries(db_connection, [job["id"] for job in jobs if job.get("job_type") == "job"])
+    for job in jobs:
+        if job.get("job_type") == "job":
+            job["host_summaries"] = host_summaries.get(job["id"], [])
+
+    existing_launch_types = dict(
+        JobData.objects.filter(job_id__in=[job["id"] for job in jobs]).values_list("job_id", "launch_type")
+    )
+    raised = _sync_jobs_atomically(jobs)
+    if raised:
+        # The whole page was rolled back, so none of its jobs is stored.
+        logger.warning("Rolled back a page of %s jobs; jobs that raised: %s", len(jobs), raised)
+        return _PageStats(failed=[job["id"] for job in jobs])
+
+    return _PageStats(
+        processed=len(jobs),
+        added=sum(job["id"] not in existing_launch_types for job in jobs),
+        updated=sum(
+            existing_launch_types.get(job["id"], "") is None and job.get("launch_type") is not None for job in jobs
+        ),
+    )
+
+
+def _ensure_template_metadata(job_results: list) -> None:
+    """
+    Create the TemplateMetadata rows of the jobs before the page transaction opens.
+
+    Inserting them inside the transaction keeps their unique-index locks until the page commits, so two
+    pages that create the same templates in opposite order can deadlock. Committing them first (in a
+    stable order) leaves only JobData upserts inside the transaction. Failures are left to the per-job
+    handling in the transaction, which reports the job as failed.
+    """
+    templates = {
+        (job.get("unified_job_template_id"), job["name"]): job.get("elapsed") for job in job_results if "name" in job
+    }
+    for (template_id, name), elapsed in sorted(templates.items(), key=lambda item: (item[0][0] or 0, item[0][1])):
+        try:
+            TemplateMetadata.get_by_awx_id_or_name(name=name, awx_id=template_id, elapsed=elapsed)
+        except Exception:
+            logger.exception("Could not pre-create TemplateMetadata for '%s'", name)
+
+
+def _sync_jobs_atomically(job_results: list) -> list:
     """
     Persist all jobs in a single atomic transaction.
 
@@ -144,17 +228,14 @@ def _sync_jobs_atomically(job_results: list, default_job_type: str | None = None
     mechanism (default: 3 attempts). When this function signals failure the calling task
     returns create_task_result("error"), which marks the Task as failed and allows the
     scheduler to retry it automatically up to max_attempts times via Task.can_retry().
-    A default job type is used only when creating a row or filling a stored NULL value.
     """
     failed_jobs: list = []
+    _ensure_template_metadata(job_results)
     try:
         with transaction.atomic():
             for job in job_results:
                 try:
-                    if default_job_type is not None and "job_type" not in job:
-                        JobData.create_or_update_from_awx(job, default_job_type=default_job_type)
-                    else:
-                        JobData.create_or_update_from_awx(job)
+                    JobData.create_or_update_from_awx(job)
                 except Exception as e:
                     logger.exception(f"Error creating/updating JobData for job {job['id']}: {str(e)}")
                     failed_jobs.append(job["id"])
@@ -165,32 +246,21 @@ def _sync_jobs_atomically(job_results: list, default_job_type: str | None = None
     return failed_jobs
 
 
-def _resolve_collection_params(task_name: str, kwargs: dict) -> tuple[datetime, datetime, int]:
-    """Resolve since, until, and batch_size from task kwargs with defaults applied.
+def _retention_window_start(until: datetime) -> datetime:
+    """Return the UTC midnight at which the retention window ending at *until* starts."""
+    if _use_controller_retention():
+        retention_days = get_retention_days()
+        if retention_days <= 0:
+            raise ValueError(f"Retention days must be > 0, got {retention_days!r}")
+    else:
+        retention_days = DEFAULT_RETENTION_DAYS
+    return (until - timedelta(days=retention_days)).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
 
-    When ``since`` is not provided and no prior ``JobData`` timestamp exists, the backfill
-    window defaults to ``DEFAULT_RETENTION_DAYS`` (90 days). When the
-    ``DASHBOARD_COLLECTION['USE_CONTROLLER_RETENTION']`` setting is enabled, the window is
-    derived from active AWX cleanup_jobs schedules via ``get_retention_days`` instead.
-    """
+
+def _configured_batch_size() -> int:
+    """Return the validated ``DASHBOARD_COLLECTION['BACKFILL_BATCH_SIZE']`` setting (default ``DEFAULT_BACKFILL_BATCH_SIZE``)."""
     dashboard_cfg = getattr(settings, "DASHBOARD_COLLECTION", None) or {}
-    ignore_database_override(task_name, kwargs)
-    until = _parse_dt(kwargs.get("until")) or datetime.now(tz=UTC)
-    # Use MAX(finished) as the watermark because all collection queries use date_field='finished'.
-    # This aligns the watermark with the query filter so the Controller DB finished index is
-    # used correctly and no jobs are missed in the gap between MAX(finished) and MAX(awx_modified).
-    since = _parse_dt(kwargs.get("since")) or JobData.last_finished_timestamp()
-    if since is None:
-        if _use_controller_retention():
-            retention_days = get_retention_days()
-            if retention_days <= 0:
-                raise ValueError(f"Retention days must be > 0, got {retention_days!r}")
-        else:
-            retention_days = DEFAULT_RETENTION_DAYS
-        since = (
-            (until - timedelta(days=retention_days)).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
-        )
-    raw_batch_size = dashboard_cfg.get("BACKFILL_BATCH_SIZE", 5_000)
+    raw_batch_size = dashboard_cfg.get("BACKFILL_BATCH_SIZE", DEFAULT_BACKFILL_BATCH_SIZE)
     try:
         batch_size = int(raw_batch_size)
     except (TypeError, ValueError) as e:
@@ -199,45 +269,78 @@ def _resolve_collection_params(task_name: str, kwargs: dict) -> tuple[datetime, 
         ) from e
     if batch_size <= 0:
         raise ValueError("DASHBOARD_COLLECTION.BACKFILL_BATCH_SIZE must be > 0")
-    return since, until, batch_size
+    return batch_size
+
+
+def configured_batch_size_or_default() -> int:
+    """Return the configured ``BACKFILL_BATCH_SIZE``, falling back to the default when the setting is invalid."""
+    try:
+        return _configured_batch_size()
+    except ValueError:
+        return DEFAULT_BACKFILL_BATCH_SIZE
+
+
+def _resolve_collection_params(
+    task_name: str, kwargs: dict, use_watermark: bool = True
+) -> tuple[datetime, datetime, int]:
+    """Resolve since, until, and batch_size from task kwargs with defaults applied.
+
+    When ``since`` is not provided and no prior ``JobData`` timestamp exists, the backfill
+    window defaults to ``DEFAULT_RETENTION_DAYS`` (90 days). When the
+    ``DASHBOARD_COLLECTION['USE_CONTROLLER_RETENTION']`` setting is enabled, the window is
+    derived from active AWX cleanup_jobs schedules via ``get_retention_days`` instead.
+    ``use_watermark=False`` ignores the stored ``JobData`` timestamp, so a retried backfill replays the
+    whole window: pages are ordered by job ID and commit independently, so the watermark of a partly
+    committed run can sit past rows that were never stored.
+    """
+    ignore_database_override(task_name, kwargs)
+    until = _parse_dt(kwargs.get("until")) or datetime.now(tz=UTC)
+    # Use MAX(finished) as the watermark because all collection queries use date_field='finished'.
+    # This aligns the watermark with the query filter so the Controller DB finished index is
+    # used correctly and no jobs are missed in the gap between MAX(finished) and MAX(awx_modified).
+    since = _parse_dt(kwargs.get("since")) or (JobData.last_finished_timestamp() if use_watermark else None)
+    if since is None:
+        since = _retention_window_start(until)
+    return since, until, _configured_batch_size()
 
 
 def _process_batches(
-    db_connection, since: datetime, until: datetime, max_id: int, after_id: int, batch_size: int, task_name: str
+    db_connection, since: datetime, until: datetime, batch_size: int, task_name: str
 ) -> tuple[int, str | None]:
-    """Collect and sync jobs in cursor-paginated batches. Returns (total_synced, error_message_or_None)."""
+    """Collect and store jobs in cursor-paginated batches. Returns (total_synced, error_message_or_None)."""
     total_synced = 0
-    while after_id < max_id:
+    pages = _iter_job_pages(db_connection, since, until, batch_size)
+    while True:
         try:
-            batch = _collect_jobs(db_connection, since=since, until=until, after_id=after_id, batch_size=batch_size)
+            page = next(pages, None)
         except Exception as e:
-            logger.exception(f"Error collecting jobs batch after id {after_id}")
+            logger.exception("Error collecting jobs batch")
             return total_synced, f"Collecting jobs failed: {str(e)}"
-
-        if not batch["results"]:
+        if page is None:
             break
 
-        # The dashboard_jobs collector joins main_job, so its rows are Controller model "job".
-        failed_jobs = _sync_jobs_atomically(batch["results"], default_job_type="job")
-        if failed_jobs:
-            return total_synced, f"Failed to sync {len(failed_jobs)} job(s): {failed_jobs}"
+        try:
+            stats = _store_dashboard_page(db_connection, page, task_name)
+        except Exception as e:
+            logger.exception("Error storing jobs batch")
+            return total_synced, f"Storing jobs failed: {str(e)}"
+        if stats.failed:
+            return total_synced, f"Failed to sync {len(stats.failed)} job(s): {stats.failed}"
 
-        batch_count = batch["count"]
-        total_synced += batch_count
-        after_id = max(j["id"] for j in batch["results"])
+        total_synced += stats.processed
         log_task_execution(
             task_name=task_name,
             operation="processing",
-            details=f"Synced batch of {batch_count} jobs (total so far: {total_synced}, cursor id: {after_id})",
+            details=f"Synced batch of {stats.processed} jobs (total so far: {total_synced})",
         )
     return total_synced, None
 
 
-def _collect_data(task_name: str, **kwargs) -> dict[str, Any]:
+def _collect_data(task_name: str, use_watermark: bool = True, **kwargs) -> dict[str, Any]:
     """
     Core data collection logic for dashboard reports.
 
-    Fetches jobs in cursor-paginated batches (default 10 000 records each) to
+    Fetches jobs in cursor-paginated batches (default 5 000 records each) to
     keep memory usage and DB transaction times bounded regardless of window size.
     Each batch is committed independently so progress is preserved if the task
     is interrupted and retried.
@@ -248,7 +351,7 @@ def _collect_data(task_name: str, **kwargs) -> dict[str, Any]:
         "data": {"task_type": task_name, "date_range": {"start": None, "end": None}, "job_count": 0},
     }
     try:
-        since, until, batch_size = _resolve_collection_params(task_name, kwargs)
+        since, until, batch_size = _resolve_collection_params(task_name, kwargs, use_watermark)
     except ValueError as e:
         result["error"] = True
         result["message"] = str(e)
@@ -270,20 +373,13 @@ def _collect_data(task_name: str, **kwargs) -> dict[str, Any]:
 
     try:
         db_connection = get_db_connection("awx")
-        min_id, max_id = _get_job_id_range(db_connection, since, until)
     except Exception as e:
         logger.exception("Database error during collection setup")
         result["error"] = True
         result["message"] = f"Database error: {str(e)}"
         return result
 
-    if min_id is None:
-        log_task_execution(task_name=task_name, operation="completed", details="No jobs found in date range")
-        result["data"] = {"task_type": task_name, "date_range": {"start": start_str, "end": end_str}, "job_count": 0}
-        return result
-
-    after_id = min_id - 1
-    total_synced, error_msg = _process_batches(db_connection, since, until, max_id, after_id, batch_size, task_name)
+    total_synced, error_msg = _process_batches(db_connection, since, until, batch_size, task_name)
 
     if error_msg:
         result["error"] = True
@@ -332,14 +428,17 @@ def collect_dashboard_reports_initial_data(**kwargs) -> dict[str, Any]:
     The retention window is determined by ``get_retention_days`` (queried from active AWX
     cleanup schedules), falling back to ``DEFAULT_RETENTION_DAYS`` when the AWX DB is
     unreachable or no active schedules exist. The window can be overridden by passing
-    ``since`` or ``until`` in kwargs.
+    ``since`` or ``until`` in kwargs. A retry replays the whole window (upserts by ``job_id`` make that
+    safe) instead of resuming from the latest stored ``finished`` timestamp. The task executor pins
+    ``since`` and ``until`` in the task data on the first attempt, so a retry resolves the same window even
+    across UTC midnight or a Controller retention change.
 
     Records telemetry for each run via ``DashboardTelemetry``.
     Returns a task result dict with status, date range, job count, and any error details.
     """
     task_name = "collect_dashboard_reports_initial_data"
     start_time = time.monotonic()
-    result = _collect_data(task_name=task_name, **kwargs)
+    result = _collect_data(task_name=task_name, use_watermark=False, **kwargs)
 
     error = result.get("error", False)
 
@@ -364,7 +463,7 @@ def collect_dashboard_reports_initial_data(**kwargs) -> dict[str, Any]:
 
 
 def _backfill_batch_size(default_batch_size: int, kwargs: dict[str, Any]) -> int:
-    """Return a validated ``batch_size`` kwarg for the organization-name backfill.
+    """Return a validated ``batch_size`` kwarg for the one-time dashboard backfill and update tasks.
 
     Has one argument, ``default_batch_size``, which is used when the kwargs does not
     contain ``batch_size``.
@@ -579,6 +678,98 @@ def backfill_dashboard_job_types(**kwargs: Any) -> dict[str, Any]:
         return create_task_result("error", error=msg)
 
 
+def update_dashboard_job_definition(**kwargs: Any) -> dict[str, Any]:
+    """Re-store the Controller jobs of the retention window with the unified dashboard job definition.
+
+    Existing JobData rows get ``launch_type`` (and ``job_type``) filled and jobs that were never stored
+    before (sync, workflow and non-job unified jobs the old backfill skipped) are added. Rows go through
+    the same collector and upsert by ``job_id`` as the hourly hook and the initial backfill, in
+    cursor-paginated batches that each commit independently. The task is idempotent: a second run adds
+    and updates nothing.
+
+    It only matters for installs that stored jobs before the ``launch_type`` migration, but it always runs:
+    the initial collection's task status does not prove that historical rows are covered (an upgrade
+    recreates a partial initial collection as pending). It is independent of that collection, so running
+    both concurrently is safe; on a fresh install it is one redundant pass over the retention window.
+
+    The result and the DashboardTelemetry row report ``processed`` (jobs stored), ``updated`` (existing rows
+    whose launch_type was unset), ``added`` (new rows) and ``failed`` (jobs in rolled-back batches).
+    Telemetry stores ``processed`` as the record count and flags the run unsuccessful when any job failed.
+
+    The window can be overridden with ``since`` or ``until`` in kwargs. The task executor pins both in the
+    task data on the first attempt, so a retry covers the same window even across UTC midnight or a
+    Controller retention change.
+    """
+    task_name = "update_dashboard_job_definition"
+    started_at = time.monotonic()
+    totals = {"processed": 0, "updated": 0, "added": 0, "failed": 0}
+    since = until = None
+    error: str | None = None
+    try:
+        ignore_database_override(task_name, kwargs)
+        batch_size = (
+            _backfill_batch_size(DEFAULT_BACKFILL_BATCH_SIZE, kwargs)
+            if "batch_size" in kwargs
+            else _configured_batch_size()
+        )
+        until = _parse_dt(kwargs.get("until")) or datetime.now(tz=UTC)
+        since = _parse_dt(kwargs.get("since")) or _retention_window_start(until)
+        log_task_execution(
+            task_name=task_name,
+            operation="processing",
+            details=f"Updating dashboard job definition for: {since.isoformat()} to {until.isoformat()}",
+        )
+
+        db_connection = get_db_connection("awx")
+        for page in _iter_job_pages(db_connection, since, until, batch_size):
+            stats = _store_dashboard_page(db_connection, page, task_name)
+            totals["processed"] += stats.processed
+            totals["updated"] += stats.updated
+            totals["added"] += stats.added
+            totals["failed"] += len(stats.failed)
+            log_task_execution(
+                task_name=task_name,
+                operation="processing",
+                details=(
+                    f"Processed {totals['processed']} jobs (updated: {totals['updated']}, "
+                    f"added: {totals['added']}, failed: {totals['failed']})"
+                ),
+            )
+    except Exception as e:
+        logger.exception("%s: failed", task_name)
+        error = f"Updating dashboard job definition failed: {e}"
+    if totals["failed"]:
+        error = error or f"Failed to store {totals['failed']} job(s); rerun the task to retry them"
+
+    duration_ms = (time.monotonic() - started_at) * 1000
+    _save_telemetry_details(
+        task_name=task_name,
+        success=error is None,
+        collection_duration_ms=duration_ms,
+        number_of_records_processed=totals["processed"],
+        database_query_time_ms=None,
+        cache_hit_rate=None,
+    )
+    data = {
+        "task_type": task_name,
+        "date_range": {"start": since.isoformat() if since else None, "end": until.isoformat() if until else None},
+        **totals,
+    }
+    if error:
+        log_task_execution(task_name=task_name, operation="failed", details=error)
+        return create_task_result("error", error=error, data=data)
+
+    log_task_execution(
+        task_name=task_name,
+        operation="completed",
+        details=(
+            f"Processed {totals['processed']} jobs (updated: {totals['updated']}, "
+            f"added: {totals['added']}, failed: {totals['failed']})"
+        ),
+    )
+    return create_task_result("success", data=data)
+
+
 def collect_dashboard_reports_data(**kwargs) -> dict[str, Any]:
     """
     Incrementally collect AWX job data since the last known JobData timestamp.
@@ -678,6 +869,9 @@ def _assemble_dashboard_job(row: dict) -> dict:
     }
     if _has_dashboard_job_model(row):
         awx_job["job_type"] = row["model"]
+    if "launch_type" in row:
+        # Rows queued before launch_type was collected omit it; that keeps the stored value.
+        awx_job["launch_type"] = row["launch_type"]
     return awx_job
 
 
