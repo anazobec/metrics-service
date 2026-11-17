@@ -7,12 +7,14 @@ Provides dispatcherd tasks:
 - collect_dashboard_reports_data: incremental sync from last known timestamp (deprecated)
 - sync_dashboard_job_records: writes unified_jobs data from the hourly hook to JobData
 - sync_dashboard_host_summaries: writes host summary data from the hourly hook to JobHostSummary
+- sync_dashboard_on_demand: manually runs both sync paths for a time window
 - cleanup_dashboard_reports_old_data: removes JobData records beyond retention period
 """
 
 import logging
 import math
 import time
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -690,6 +692,7 @@ def sync_dashboard_job_records(**kwargs) -> dict[str, Any]:
     task_name = "sync_dashboard_job_records"
     hour_timestamp = kwargs.get("hour_timestamp", "unknown")
     raw_jobs = [row.copy() if isinstance(row, dict) else row for row in kwargs.get("raw_jobs", [])]
+    save_telemetry = kwargs.get("save_telemetry", True)
     start_time = time.monotonic()
 
     log_task_execution(
@@ -716,14 +719,15 @@ def sync_dashboard_job_records(**kwargs) -> dict[str, Any]:
 
     duration_ms = (time.monotonic() - start_time) * 1000
     success = not failed_jobs
-    _save_telemetry_details(
-        task_name=task_name,
-        success=success,
-        collection_duration_ms=duration_ms,
-        number_of_records_processed=len(assembled) - len(failed_jobs),
-        database_query_time_ms=None,
-        cache_hit_rate=None,
-    )
+    if save_telemetry:
+        _save_telemetry_details(
+            task_name=task_name,
+            success=success,
+            collection_duration_ms=duration_ms,
+            number_of_records_processed=len(assembled) - len(failed_jobs),
+            database_query_time_ms=None,
+            cache_hit_rate=None,
+        )
 
     if failed_jobs:
         return create_task_result("error", error=f"Failed to sync {len(failed_jobs)} job(s): {failed_jobs}")
@@ -749,6 +753,7 @@ def sync_dashboard_host_summaries(**kwargs) -> dict[str, Any]:
     task_name = "sync_dashboard_host_summaries"
     hour_timestamp = kwargs.get("hour_timestamp", "unknown")
     raw_host_summaries = kwargs.get("raw_host_summaries", [])
+    save_telemetry = kwargs.get("save_telemetry", True)
     start_time = time.monotonic()
 
     log_task_execution(
@@ -800,14 +805,15 @@ def sync_dashboard_host_summaries(**kwargs) -> dict[str, Any]:
 
     duration_ms = (time.monotonic() - start_time) * 1000
     success = not failed
-    _save_telemetry_details(
-        task_name=task_name,
-        success=success,
-        collection_duration_ms=duration_ms,
-        number_of_records_processed=synced,
-        database_query_time_ms=None,
-        cache_hit_rate=None,
-    )
+    if save_telemetry:
+        _save_telemetry_details(
+            task_name=task_name,
+            success=success,
+            collection_duration_ms=duration_ms,
+            number_of_records_processed=synced,
+            database_query_time_ms=None,
+            cache_hit_rate=None,
+        )
 
     log_task_execution(
         task_name=task_name,
@@ -822,6 +828,185 @@ def sync_dashboard_host_summaries(**kwargs) -> dict[str, Any]:
     return create_task_result(
         "success", data={"task_type": task_name, "job_count": synced, "hour_timestamp": hour_timestamp}
     )
+
+
+_ON_DEMAND_WINDOW = timedelta(days=1)  # sub-window size, bounds memory for large backfills
+_ON_DEMAND_MAX_RANGE = timedelta(days=7)  # longer ranges belong to collect_dashboard_reports_initial_data
+
+
+def _save_on_demand_telemetry(task_name: str, start_time: float, success: bool, records: int = 0) -> None:
+    """Record telemetry for an on-demand sync run, including failed ones."""
+    _save_telemetry_details(
+        task_name=task_name,
+        success=success,
+        collection_duration_ms=(time.monotonic() - start_time) * 1000,
+        number_of_records_processed=records,
+        database_query_time_ms=None,
+        cache_hit_rate=None,
+    )
+
+
+def _on_demand_windows(since: datetime, until: datetime) -> Iterator[tuple[datetime, datetime]]:
+    """Yield consecutive [start, end) sub-windows of at most ``_ON_DEMAND_WINDOW`` covering since..until."""
+    start = since
+    while start < until:
+        end = min(start + _ON_DEMAND_WINDOW, until)
+        yield start, end
+        start = end
+
+
+def _sync_on_demand_window(db_connection, start: datetime, end: datetime) -> tuple[int, int, str | None]:
+    """Run both dashboard sync paths for one window.
+
+    Returns ``(job_count, host_summary_job_count, error_or_None)``. Jobs are synced first because
+    host summaries are only written for jobs already present in JobData.
+    """
+    # Lazy imports: keep metrics_utility optional at module level and avoid the
+    # apps.tasks <-> apps.dashboard_reports import cycle.
+    from metrics_utility.library.collectors.controller import job_host_summary_service, unified_jobs_dashboard
+
+    from apps.tasks.collectors.collect_hourly_metrics import _build_dashboard_job_records, _build_host_summary_by_job
+
+    window = f"{start.isoformat()} to {end.isoformat()}"
+    hour_timestamp = start.isoformat()
+    try:
+        raw_jobs = unified_jobs_dashboard(db=db_connection, since=start, until=end).gather()
+        job_records = _build_dashboard_job_records(raw_jobs)
+        raw_summaries = job_host_summary_service(db=db_connection, since=start, until=end).gather()
+        summary_records = [r for records in _build_host_summary_by_job(raw_summaries).values() for r in records]
+    except Exception:
+        logger.exception(f"On-demand dashboard sync collection failed for {window}")
+        return 0, 0, f"Collection failed for {window}. See server logs for details."
+
+    job_count = 0
+    if job_records:
+        job_result = sync_dashboard_job_records(
+            raw_jobs=job_records, hour_timestamp=hour_timestamp, save_telemetry=False
+        )
+        if job_result["status"] != "success":
+            return 0, 0, f"sync_dashboard_job_records failed for {window}: {job_result.get('error', 'unknown error')}"
+        job_count = job_result.get("job_count", 0)
+
+    summary_job_count = 0
+    if summary_records:
+        summary_result = sync_dashboard_host_summaries(
+            raw_host_summaries=summary_records, hour_timestamp=hour_timestamp, save_telemetry=False
+        )
+        if summary_result["status"] != "success":
+            return (
+                job_count,
+                0,
+                f"sync_dashboard_host_summaries failed for {window}: {summary_result.get('failed', 0)} job(s) failed",
+            )
+        summary_job_count = summary_result.get("job_count", 0)
+    return job_count, summary_job_count, None
+
+
+def sync_dashboard_on_demand(**kwargs) -> dict[str, Any]:
+    """Manually sync dashboard JobData and JobHostSummary records for a time window.
+
+    Runs the same collection and upsert paths as the hourly hooks (``sync_dashboard_job_records``
+    then ``sync_dashboard_host_summaries``), inline, so failures are reported in the task result.
+    Safe to rerun: both writers upsert. Inner writer telemetry is suppressed so each run records
+    a single ``sync_dashboard_on_demand`` row. Respects the ``DASHBOARD_COLLECTION`` enablement
+    setting: when disabled, nothing is collected or written and an error is returned.
+
+    Args:
+        **kwargs: task_data containing:
+            - since (str|None): ISO start of window, inclusive. Defaults to the latest JobData
+              ``finished`` timestamp (or the retention window if no data exists).
+            - until (str|None): ISO end of window, exclusive. Defaults to now.
+            The range may not exceed ``_ON_DEMAND_MAX_RANGE``; use
+            ``collect_dashboard_reports_initial_data`` for larger backfills.
+
+    Returns:
+        dict: task result with ``date_range``, ``job_count``, ``host_summary_job_count`` and
+        ``synced_until`` (end of the last fully synced window, usable as the next ``since``);
+        status is ``error`` if any window failed.
+    """
+    task_name = "sync_dashboard_on_demand"
+    start_time = time.monotonic()
+    # Lazy import: circular dependency (task_groups -> tasks -> dashboard_reports.tasks).
+    from apps.tasks.task_groups import get_feature_enabled_from_db
+
+    # Tasks created via schedule_immediate carry no _feature_flag, so the gate is enforced here.
+    if not get_feature_enabled_from_db("DASHBOARD_COLLECTION"):
+        _save_on_demand_telemetry(task_name=task_name, start_time=start_time, success=False)
+        return create_task_result("error", error="DASHBOARD_COLLECTION is disabled; on-demand sync skipped")
+    try:
+        since, until, _ = _resolve_collection_params(task_name, kwargs)
+    except (TypeError, ValueError) as e:
+        logger.warning("On-demand dashboard sync rejected: %s", e)
+        _save_on_demand_telemetry(task_name=task_name, start_time=start_time, success=False)
+        return create_task_result(
+            "error",
+            error="Invalid on-demand sync parameters: since/until must be ISO 8601 timestamps. See server logs for details.",
+        )
+    if since >= until:
+        _save_on_demand_telemetry(task_name=task_name, start_time=start_time, success=False)
+        return create_task_result("error", error=f"Invalid date range: '{since}' to '{until}'")
+    if until - since > _ON_DEMAND_MAX_RANGE:
+        _save_on_demand_telemetry(task_name=task_name, start_time=start_time, success=False)
+        return create_task_result(
+            "error",
+            error=(
+                f"Range {since.isoformat()} to {until.isoformat()} exceeds {_ON_DEMAND_MAX_RANGE.days} days; "
+                "pass a narrower since/until, or use collect_dashboard_reports_initial_data for first-time backfills"
+            ),
+        )
+
+    date_range = {"start": since.isoformat(), "end": until.isoformat()}
+    log_task_execution(
+        task_name=task_name,
+        operation="processing",
+        details=f"On-demand dashboard sync for {date_range['start']} to {date_range['end']}",
+    )
+
+    total_jobs = 0
+    total_summary_jobs = 0
+    synced_until: datetime | None = None
+    error: str | None = None
+    try:
+        db_connection = get_db_connection("awx")
+        for start, end in _on_demand_windows(since, until):
+            job_count, summary_job_count, error = _sync_on_demand_window(db_connection, start, end)
+            total_jobs += job_count
+            total_summary_jobs += summary_job_count
+            if error:
+                break
+            synced_until = end
+            log_task_execution(
+                task_name=task_name,
+                operation="processing",
+                details=f"Synced up to {end.isoformat()} ({total_jobs} jobs so far)",
+            )
+    except Exception:
+        logger.exception("On-demand dashboard sync failed")
+        error = "Database error during on-demand sync. See server logs for details."
+
+    data = {
+        "task_type": task_name,
+        "date_range": date_range,
+        "job_count": total_jobs,
+        "host_summary_job_count": total_summary_jobs,
+        "synced_until": synced_until.isoformat() if synced_until else None,
+    }
+
+    _save_on_demand_telemetry(
+        task_name=task_name,
+        start_time=start_time,
+        success=error is None,
+        records=total_jobs + total_summary_jobs,
+    )
+
+    if error:
+        return create_task_result("error", data=data, error=error)
+    log_task_execution(
+        task_name=task_name,
+        operation="completed",
+        details=f"Synced {total_jobs} jobs and host summaries for {total_summary_jobs} jobs",
+    )
+    return create_task_result("success", data=data)
 
 
 def _normalize_retention_days(task_name: str, retention_days: Any) -> tuple[int, dict[str, Any] | None]:
