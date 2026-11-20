@@ -224,9 +224,13 @@ class UnifiedTaskScheduler:
                 if not self._task_feature_flag_enabled(task, feature_flags):
                     continue
                 logger.info(f"Found new immediate task: {task.name} (ID: {task.id}) - executing now")
-                # Track immediate task to prevent duplicate submissions
+                # Track only while dispatching; pending tasks must be rediscovered
+                # even if execution fails before the submit-specific cleanup.
                 self._db_task_jobs[task.id] = f"db_immediate_{task.id}"
-                self._execute_database_task(task.id)
+                try:
+                    self._execute_database_task(task.id)
+                finally:
+                    self._remove_database_task(task.id)
                 new_immediate += 1
         return new_immediate
 

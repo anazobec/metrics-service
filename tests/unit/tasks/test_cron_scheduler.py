@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from django.conf import settings
+from django.db import OperationalError
 from django.utils import timezone
 
 from apps.tasks.cron_scheduler import UnifiedTaskScheduler, _inject_dispatch_timestamps
@@ -48,8 +49,55 @@ class TestPeriodicDatabaseSync:
 
         # Assert
         mock_execute.assert_called_once_with(1)
-        assert 1 in scheduler._db_task_jobs
-        assert scheduler._db_task_jobs[1] == "db_immediate_1"
+        assert 1 not in scheduler._db_task_jobs
+
+    @pytest.mark.parametrize("failure", ["lookup", "submit"])
+    def test_resubmits_immediate_task_after_transient_error(self, failure: str) -> None:
+        """A failed dispatch must not make the next sync skip a pending task."""
+        from apps.tasks.models import Task
+
+        task = Task.objects.create(name="Immediate recovery", function_name="hello_world")
+        scheduler = UnifiedTaskScheduler()
+        target = (
+            "apps.tasks.models.Task.objects.get"
+            if failure == "lookup"
+            else "apps.tasks.tasks_system.submit_task_to_dispatcher"
+        )
+
+        with (
+            patch("apps.tasks.cron_scheduler.close_old_connections"),
+            patch("apps.tasks.utils.awx_db_ready", return_value=True),
+            patch.object(scheduler, "_cleanup_stale_advisory_locks"),
+        ):
+            with patch(target, side_effect=OperationalError("Transient dispatch failure")):
+                scheduler._periodic_database_sync()
+
+            task.refresh_from_db()
+            assert task.status == "pending"
+            assert task.attempts == 0
+            assert task.pk not in scheduler._db_task_jobs
+
+            with patch("apps.tasks.tasks_system.submit_task_to_dispatcher") as submit:
+                scheduler._periodic_database_sync()
+
+            submit.assert_called_once()
+            assert submit.call_args.args[0].pk == task.pk
+
+    def test_immediate_tracking_cleared_when_execution_raises(self) -> None:
+        """Cleanup also covers exceptions outside the dispatch callback's handler."""
+        from apps.tasks.models import Task
+
+        task = Task.objects.create(name="Immediate callback failure", function_name="hello_world")
+        scheduler = UnifiedTaskScheduler()
+        with (
+            patch.object(
+                scheduler, "_execute_database_task", side_effect=OperationalError("Connection cleanup failed")
+            ),
+            pytest.raises(OperationalError, match="Connection cleanup failed"),
+        ):
+            scheduler._process_immediate_tasks([task], {})
+
+        assert task.pk not in scheduler._db_task_jobs
 
     @patch("apps.tasks.models.Task")
     @patch("apps.tasks.utils.awx_db_ready", return_value=True)
