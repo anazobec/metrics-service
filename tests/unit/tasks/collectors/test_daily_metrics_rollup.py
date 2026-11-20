@@ -16,6 +16,7 @@ import pytest
 from django.utils import timezone
 
 from apps.tasks.collectors.daily_metrics_rollup import (
+    _build_rollup_processors,
     _collect_and_group_hourly_collections,
     _merge_collects,
     _merge_hourly_rollups,
@@ -162,6 +163,99 @@ class TestCollectAndGroupHourlyCollections:
         assert "job_host_summary_service" in collections_by_type
 
 
+def _get_collector_registries():
+    """Return all collector registries that feed the daily rollup."""
+    from apps.tasks.collectors.collect_daily_metrics import _get_daily_collectors
+    from apps.tasks.collectors.collect_hourly_metrics import _get_hourly_collectors
+    from apps.tasks.collectors.collect_snapshot_metrics import _get_snapshot_collectors
+
+    return _get_hourly_collectors(), _get_snapshot_collectors(), _get_daily_collectors()
+
+
+@pytest.mark.unit
+def test_build_rollup_processors_only_includes_persisted_processors():
+    """Only persisted collectors with a processor belong in the daily rollup maps."""
+
+    class IncludedProcessor:
+        """Processor that should be included."""
+
+    class ExcludedProcessor:
+        """Processor for a collector that does not persist hourly data."""
+
+    processors = _build_rollup_processors(
+        {
+            "default_persisted": {"rollup_processor": IncludedProcessor},
+            "explicitly_persisted": {
+                "rollup_processor": IncludedProcessor,
+                "persist_to_hourly": True,
+            },
+            "analytics_only": {
+                "rollup_processor": ExcludedProcessor,
+                "persist_to_hourly": False,
+            },
+            "raw_persisted": {
+                "rollup_processor": None,
+                "persist_to_hourly": True,
+            },
+        }
+    )
+
+    assert set(processors) == {"default_persisted", "explicitly_persisted"}
+    assert isinstance(processors["default_persisted"], IncludedProcessor)
+    assert isinstance(processors["explicitly_persisted"], IncludedProcessor)
+
+
+@pytest.mark.unit
+def test_rollup_processor_registry_entries_are_persisted():
+    """Every configured rollup processor must have local hourly persistence enabled."""
+    registries = _get_collector_registries()
+    hourly_registry, snapshot_registry, daily_registry = registries
+
+    processor_types = {
+        collector_type
+        for registry in registries
+        for collector_type, config in registry.items()
+        if config.get("rollup_processor") is not None
+    }
+
+    assert processor_types
+    assert set(_build_rollup_processors(hourly_registry)) == {
+        "job_host_summary_service",
+        "unified_jobs",
+        "credentials_service",
+        "main_jobevent_service",
+    }
+    assert set(_build_rollup_processors(snapshot_registry, daily_registry)) == {
+        "execution_environments",
+        "controller_version_service",
+        "feature_flags_service",
+        "table_metadata",
+        "task_executions_service",
+        "indirect_managed_nodes",
+    }
+    assert all(
+        registry[collector_type].get("persist_to_hourly", True)
+        for registry in registries
+        for collector_type in processor_types
+        if collector_type in registry
+    )
+
+
+@pytest.mark.unit
+def test_persisted_collectors_without_rollup_processors_are_explicit():
+    """Config is the only raw collector persisted locally outside daily rollups."""
+    registries = _get_collector_registries()
+
+    persisted_without_processor = {
+        collector_type
+        for registry in registries
+        for collector_type, config in registry.items()
+        if config.get("persist_to_hourly", True) and config.get("rollup_processor") is None
+    }
+
+    assert persisted_without_processor == {"config"}
+
+
 @pytest.mark.unit
 def test_raw_only_collectors_are_not_processed_by_rollup(monkeypatch):
     """Raw analytics collectors should not be included in anonymized rollups."""
@@ -173,28 +267,18 @@ def test_raw_only_collectors_are_not_processed_by_rollup(monkeypatch):
         "_merge_collects",
         lambda collections, processor: {},
     )
+    registries = _get_collector_registries()
     raw_collectors = {
-        "events_table",
-        "workflow_job_node_table",
-        "query_info",
-        "main_host",
-        "counts",
-        "cred_type_counts",
-        "host_metric_summary_monthly_table",
-        "instance_info",
-        "inventory_counts",
-        "org_counts",
-        "projects_by_scm_type",
-        "unified_job_template_table",
-        "workflow_job_template_node_table",
-        "main_host_daily",
-        "main_hostmetric",
+        collector_type
+        for registry in registries
+        for collector_type, config in registry.items()
+        if not config.get("persist_to_hourly", True) or config.get("rollup_processor") is None
     }
 
     daily_rollup, missing_hours = _merge_hourly_rollups({collector: [{}] for collector in raw_collectors})
 
     assert not raw_collectors & daily_rollup.keys()
-    assert not any(collector in missing for collector in raw_collectors for missing in missing_hours)
+    assert not raw_collectors & {missing.split(":", 1)[0] for missing in missing_hours}
 
 
 @pytest.mark.unit

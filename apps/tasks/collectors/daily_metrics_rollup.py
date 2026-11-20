@@ -82,6 +82,19 @@ def _collect_and_group_hourly_collections(summary_date: date) -> tuple[dict[str,
     return collections_by_type, start_datetime, end_datetime
 
 
+def _build_rollup_processors(*collector_registries: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Build processors for collectors that persist rollup data."""
+    processors = {}
+    for registry in collector_registries:
+        for collector_type, config in registry.items():
+            if not config.get("persist_to_hourly", True):
+                continue
+            processor_class = config.get("rollup_processor")
+            if processor_class:
+                processors[collector_type] = processor_class()
+    return processors
+
+
 def _merge_hourly_rollups(collections_by_type: dict[str, list]) -> tuple[dict, list]:
     """
     Merge hourly and daily rollups using rollup processors
@@ -96,46 +109,17 @@ def _merge_hourly_rollups(collections_by_type: dict[str, list]) -> tuple[dict, l
     Returns:
         tuple: (daily_rollup dict, missing_hours list)
     """
-    from metrics_utility.anonymized_rollups import (  # EventModulesAnonymizedRollup,
-        ControllerVersionAnonymizedRollup,
-        CredentialsAnonymizedRollup,
-        EventModulesAnonymizedRollup,
-        ExecutionEnvironmentsAnonymizedRollup,
-        FeatureFlagsAnonymizedRollup,
-        IndirectManagedNodesAnonymizedRollup,
-        JobHostSummaryAnonymizedRollup,
-        JobsAnonymizedRollup,
-        TableMetadataAnonymizedRollup,
-        TaskExecutionsAnonymizedRollup,
-    )
+    from .collect_daily_metrics import _get_daily_collectors
+    from .collect_hourly_metrics import _get_hourly_collectors
+    from .collect_snapshot_metrics import _get_snapshot_collectors
 
     # Rollup processors for each collector type
     # Hourly collectors expect 24 collections (one per hour)
-    hourly_rollup_processors = {
-        "credentials_service": CredentialsAnonymizedRollup(),
-        "job_host_summary_service": JobHostSummaryAnonymizedRollup(),
-        "main_jobevent_service": EventModulesAnonymizedRollup(),
-        "unified_jobs": JobsAnonymizedRollup(),
-    }
-    # job_host_summary, unified_jobs_base, main_jobevent_legacy, events_table,
-    # workflow_job_node_table, and query_info are raw analytics collectors. They intentionally
-    # have no entry here because they do not produce anonymized rollup data.
+    hourly_rollup_processors = _build_rollup_processors(_get_hourly_collectors())
 
     # Daily collectors expect 1 collection per day.
     # Includes both snapshot collectors and daily time-range collectors.
-    daily_rollup_processors = {
-        "execution_environments": ExecutionEnvironmentsAnonymizedRollup(),
-        "controller_version_service": ControllerVersionAnonymizedRollup(),
-        "feature_flags_service": FeatureFlagsAnonymizedRollup(),
-        "table_metadata": TableMetadataAnonymizedRollup(),
-        "task_executions_service": TaskExecutionsAnonymizedRollup(),
-        "indirect_managed_nodes": IndirectManagedNodesAnonymizedRollup(),
-    }
-    # config is handled separately, while the remaining raw analytics collectors are intentionally
-    # absent because they do not produce anonymized rollup data:
-    # main_host, counts, cred_type_counts, host_metric_summary_monthly_table, instance_info,
-    # inventory_counts, org_counts, projects_by_scm_type, unified_job_template_table,
-    # workflow_job_template_node_table, main_host_daily, and main_hostmetric.
+    daily_rollup_processors = _build_rollup_processors(_get_snapshot_collectors(), _get_daily_collectors())
 
     # Merge hourly rollups into daily rollups
     daily_rollup = {}
