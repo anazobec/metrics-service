@@ -9,13 +9,14 @@ with related JobLabel and JobHostSummary for storing AWX job execution records.
 import calendar
 import decimal
 import logging
+from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Self
+from typing import Any, Self
 
 from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import IntegrityError, models, transaction
-from django.db.models import Sum
+from django.db.models import Exists, F, Lookup, OuterRef, Q, Sum
 from metrics_utility.library.collectors.dashboard import AWXJobType
 
 # Import base classes, handling both DAB and simple fallbacks
@@ -139,20 +140,32 @@ class SubscriptionCost(CommonModel):
         cost calculations.
         """
 
-        instance, created = cls.objects.get_or_create(
-            pk=1,
-            defaults={
-                "monthly_subscription_cost": decimal.Decimal("5000.00"),
-                "engineer_avg_hourly_rate": decimal.Decimal("60.00"),
-                "include_template_creation_time_in_costs": True,
-            },
-        )
+        instance, created = cls.objects.get_or_create(pk=1, defaults=cls._default_values())
         if created:
             logger.info(
                 "Created SubscriptionCost with default placeholder values ($5,000/month, $60/hr). "
                 "Update via the subscription-cost API to reflect actual costs."
             )
         return instance
+
+    @classmethod
+    def get_or_default(cls) -> Self:
+        """
+        Return the single SubscriptionCost instance, or an unsaved one with the default values.
+
+        Same values as get(), but never writes: for read-only actions that must have no side effects.
+        """
+        instance = cls.objects.filter(pk=1).first()
+        return instance if instance is not None else cls(pk=1, **cls._default_values())
+
+    @staticmethod
+    def _default_values() -> dict[str, Any]:
+        """Return the default placeholder values used when no SubscriptionCost has been configured."""
+        return {
+            "monthly_subscription_cost": decimal.Decimal("5000.00"),
+            "engineer_avg_hourly_rate": decimal.Decimal("60.00"),
+            "include_template_creation_time_in_costs": True,
+        }
 
     @property
     def cost_employee_per_minute(self) -> decimal.Decimal:
@@ -433,13 +446,39 @@ class JobStatusChoices(models.TextChoices):
     CANCELED = "canceled", "Canceled"
 
 
-def label_ids_to_job_data_ids(label_ids: list[int]):
+class AnyArray(Lookup):
+    """
+    ``<column> = ANY(%s)`` with the IDs passed as one Postgres array parameter.
+
+    Used instead of ``__in`` for ID filters, which can hold thousands of IDs (large report filter
+    selections): the IDs are bound as one array parameter instead of one placeholder per ID.
+    Used directly as a filter expression, e.g. ``qs.filter(AnyArray(F("template_id"), ids))``;
+    it is not registered as a field lookup.
+    """
+
+    prepare_rhs = False
+
+    def as_sql(self, compiler: Any, connection: Any) -> tuple[str, list[Any]]:
+        """Render ``lhs = ANY(%s)`` with the right-hand side as a single list parameter."""
+        lhs, lhs_params = self.process_lhs(compiler, connection)
+        return f"{lhs} = ANY(%s)", [*lhs_params, list(self.rhs)]
+
+
+# Report filter field -> JobData ID column (labels are matched through JobLabel instead).
+JOB_DATA_ID_COLUMNS: dict[str, str] = {
+    "organization": "organization_id",
+    "template": "template_id",
+    "project": "project_id",
+}
+
+
+def label_ids_to_job_data_ids(label_ids: Sequence[int]):
     """Return a queryset of JobData IDs that have any of the given AWX label IDs.
 
     Shared by JobDataFilterMethods.labels() and filters.apply_or_filters() to avoid
     duplicating the subquery pattern.
     """
-    return JobLabel.objects.filter(label_id__in=label_ids).values_list("job_data_id", flat=True)
+    return JobLabel.objects.filter(AnyArray(F("label_id"), label_ids)).values_list("job_data_id", flat=True)
 
 
 class JobDataFilterMethods:
@@ -465,19 +504,19 @@ class JobDataFilterMethods:
     def organizations(self, ids: list[int] | None) -> Self:
         """Filter jobs belonging to the given organization IDs (no-op if ids is empty)."""
         if ids:
-            return self.filter(organization_id__in=ids)
+            return self.filter(AnyArray(F("organization_id"), ids))
         return self
 
     def templates(self, ids: list[int] | None) -> Self:
         """Filter jobs for the given template IDs (no-op if ids is empty)."""
         if ids:
-            return self.filter(template_id__in=ids)
+            return self.filter(AnyArray(F("template_id"), ids))
         return self
 
     def projects(self, ids: list[int] | None) -> Self:
         """Filter jobs for the given project IDs (no-op if ids is empty)."""
         if ids:
-            return self.filter(project_id__in=ids)
+            return self.filter(AnyArray(F("project_id"), ids))
         return self
 
     def labels(self, ids: list[int] | None) -> Self:
@@ -485,6 +524,23 @@ class JobDataFilterMethods:
         if ids:
             return self.filter(id__in=label_ids_to_job_data_ids(ids))
         return self
+
+    def exclude_ids(self, field: str, ids: Sequence[int]) -> Self:
+        """
+        Exclude jobs whose organization/template/project/label is one of ids (no-op if ids is empty).
+
+        Jobs with a NULL ID are kept, the same as without the filter. For labels, every job that
+        has any of the labels is excluded, even if it also has another label.
+        """
+        if not ids:
+            return self
+        if field == "label":
+            # NOT EXISTS plans as an anti-join; NOT IN (subquery) over all labelled jobs may not.
+            labelled = JobLabel.objects.filter(job_data_id=OuterRef("pk")).filter(AnyArray(F("label_id"), ids))
+            return self.filter(~Exists(labelled))
+        column = JOB_DATA_ID_COLUMNS[field]
+        # Spelled out instead of exclude(): NOT (col = ANY(...)) is NULL for a NULL column, which would drop the row.
+        return self.filter(Q(**{f"{column}__isnull": True}) | ~Q(AnyArray(F(column), ids)))
 
 
 class JobDataQuerySet(JobDataFilterMethods, models.QuerySet):

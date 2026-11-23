@@ -2,34 +2,50 @@
 
 import csv
 import decimal
+import json
 import logging
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from functools import wraps
 from typing import Any
 
-from ansible_base.rbac.api.permissions import IsSystemAdminOrAuditor
 from ansible_base.rest_pagination import DefaultPaginator
 from dateutil.relativedelta import relativedelta
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
 from django.db.models import Case, Count, F, OuterRef, Q, QuerySet, Subquery, Sum, Value, When
 from django.db.models.functions import Cast, Coalesce, Trunc
 from django.http import HttpResponse, JsonResponse
 from django_generate_series.models import generate_series  # PostgreSQL-only; revisit if other DB support is added
 from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view, inline_serializer
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    extend_schema_view,
+    inline_serializer,
+)
 from rest_framework import filters, serializers, status
 from rest_framework.decorators import action
+from rest_framework.parsers import JSONParser
 from rest_framework.renderers import BaseRenderer
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.settings import api_settings
 from rest_framework.viewsets import ReadOnlyModelViewSet
 
-from apps.dashboard_reports.filters import CustomReportFilter, DateFilter, validate_custom_period_dates
+from apps.core.permissions import IsSystemAdminOrAuditorReadQuery
+from apps.dashboard_reports.filters import (
+    CustomReportFilter,
+    DateFilter,
+    ReportParams,
+    get_report_params,
+    validate_custom_period_dates,
+)
 from apps.dashboard_reports.models import JobData, JobHostSummary, JobLabel, JobStatusChoices, SubscriptionCost
 from apps.dashboard_reports.serializers import (
     ReportDetailSerializer,
+    ReportQuerySerializer,
     ReportSerializer,
 )
 from apps.dashboard_reports.utils import sec2time
@@ -124,6 +140,12 @@ class PassthroughRenderer(BaseRenderer):
     format = "csv"
 
     def render(self, data: Any, accepted_media_type: str | None = None, renderer_context: dict | None = None) -> Any:
+        """Return CSV content as-is; render error payloads (dict/list, e.g. a 400) as JSON instead."""
+        if isinstance(data, dict | list):
+            response = (renderer_context or {}).get("response")
+            if response is not None:
+                response["Content-Type"] = "application/json"
+            return json.dumps(data, cls=DjangoJSONEncoder)
         return data
 
 
@@ -165,11 +187,12 @@ def require_date_range(view_func):
     @wraps(view_func)
     def wrapper(view, *args, **kwargs) -> Response:
         """Validate date range and delegate to the wrapped view function."""
-        # Use request.GET for query parameters (works for DRF and Django)
-        period = view.request.GET.get("period") or DateFilter.LAST_30_DAYS.value
-        timezone_str = view.request.GET.get("tz", "UTC") or "UTC"
-        start_date_str = view.request.GET.get("start_date", None)
-        end_date_str = view.request.GET.get("end_date", None)
+        # Query string for GET, validated JSON body for the POST query actions.
+        params = get_report_params(view.request)
+        period = params.get("period") or DateFilter.LAST_30_DAYS.value
+        timezone_str = params.get("tz", "UTC") or "UTC"
+        start_date_str = params.get("start_date", None)
+        end_date_str = params.get("end_date", None)
 
         start_date, end_date, period_err_msg = parse_period_param(
             period_str=period,
@@ -198,6 +221,65 @@ def require_date_range(view_func):
         return view_func(view, *args, **kwargs)
 
     return wrapper
+
+
+def _selection_query_parameters(field: str) -> list[OpenApiParameter]:
+    """Document the selection parameters (select_all / search / excluded / excluded_search) of one filter field."""
+    return [
+        OpenApiParameter(
+            name=f"select_all_{field}",
+            type=OpenApiTypes.BOOL,
+            location=OpenApiParameter.QUERY,
+            required=False,
+            description=(
+                f"Select every {field}: same as no {field} filter, including historical runs of deleted items "
+                f"and jobs without a {field}. Exclusions still apply."
+            ),
+        ),
+        OpenApiParameter(
+            name=f"search_{field}",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            required=False,
+            many=True,
+            description=(
+                f"Select every {field} whose name contains the term (case-insensitive, the same matching as the "
+                f"{field} filter options; multiple allowed). Combined with the explicit {field} IDs. "
+                "A selection that matches nothing returns no data."
+            ),
+        ),
+        OpenApiParameter(
+            name=f"excluded_{field}",
+            type=OpenApiTypes.INT,
+            location=OpenApiParameter.QUERY,
+            required=False,
+            many=True,
+            description=(
+                f"Deselect these {field} IDs (multiple allowed)."
+                + (
+                    " A job with any excluded label is excluded, even if it has a selected label."
+                    if field == "label"
+                    else ""
+                )
+            ),
+        ),
+        OpenApiParameter(
+            name=f"excluded_search_{field}",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            required=False,
+            many=True,
+            description=f"Deselect every {field} whose name contains the term (multiple allowed).",
+        ),
+    ]
+
+
+# Selection parameters, accepted in the query string (GET) and in the JSON body (POST query actions).
+SELECTION_QUERY_PARAMETERS = [
+    parameter
+    for field in ("organization", "template", "label", "project")
+    for parameter in _selection_query_parameters(field)
+]
 
 
 DETAIL_QUERY_PARAMETERS = [
@@ -308,6 +390,7 @@ DETAIL_QUERY_PARAMETERS = [
         many=True,
         description="OR filter by project ID (multiple allowed)",
     ),
+    *SELECTION_QUERY_PARAMETERS,
     OpenApiParameter(
         name="ordering",
         type=OpenApiTypes.STR,
@@ -319,6 +402,28 @@ DETAIL_QUERY_PARAMETERS = [
         ),
     ),
 ]
+
+
+# Error responses of the POST query actions. Always JSON, also on export/query/.
+QUERY_ERROR_RESPONSES = {
+    (400, "application/json"): OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "Invalid request. Body validation errors (unknown keys, wrong types, an invalid period or date "
+            'format) are an object keyed by the offending field, e.g. {"templates": ["Unknown parameter."]}. '
+            "An invalid timezone, a start_date after end_date, or a custom period without dates returns "
+            '{"error": "<message>", "status_code": 400, "timestamp": "<ISO 8601>"}.'
+        ),
+    ),
+    (503, "application/json"): OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="The search terms could not be resolved because the AWX database is unavailable.",
+    ),
+}
+
+# Parameters that stay in the query string on POST report/query/ (the filters go in the body).
+ORDERING_QUERY_PARAMETERS = [p for p in DETAIL_QUERY_PARAMETERS if p.name == "ordering"]
+REPORT_QUERY_STRING_PARAMETERS = [*PAGINATION_QUERY_PARAMETERS, *ORDERING_QUERY_PARAMETERS]
 
 
 @extend_schema_view(
@@ -347,6 +452,8 @@ class DashboardReportViewSet(ReadOnlyModelViewSet):
         GET /api/v1/dashboard_reports/report/ - List all data (paginated)
         GET /api/v1/dashboard_reports/report/details/ - Get  report summary, chart data, and top users/projects
         GET /api/v1/dashboard_reports/report/export/ - Export report data as CSV
+        POST /api/v1/dashboard_reports/report/query/, report/details/query/, report/export/query/ -
+            the same three, with the filters in a JSON body (for large filter selections)
 
     Query Parameters:
         page (int): Page number (default: 1)
@@ -358,6 +465,10 @@ class DashboardReportViewSet(ReadOnlyModelViewSet):
         template (int): Filter by job template ID (multiple allowed)
         label (int): Filter by label ID (multiple allowed)
         project (int): Filter by project ID (multiple allowed)
+        select_all_<field> (bool): Select every organization/template/label/project, same as no filter on that field
+        search_<field> (str): Select every item whose name contains the term (multiple allowed)
+        excluded_<field> (int): Deselect these IDs (multiple allowed)
+        excluded_search_<field> (str): Deselect every item whose name contains the term (multiple allowed)
         job_type (string): Filter by Controller model name (e.g. systemjob or workflowjob; defaults to job, including unclassified legacy rows)
         ordering (str): Field to order by (e.g. "template_metadata__template_name", "successful_runs", "savings", "time_savings", etc.)
             `order_by` is accepted as an alias for this parameter; if both are given, `ordering` takes precedence.
@@ -369,7 +480,10 @@ class DashboardReportViewSet(ReadOnlyModelViewSet):
     DefaultPaginator), not absolute URLs.
     """
 
-    permission_classes = [IsSystemAdminOrAuditor]
+    permission_classes = [IsSystemAdminOrAuditorReadQuery]
+    # POST query actions that only read data (filters in the JSON body); auditors are allowed on them.
+    # They must stay free of side effects, see IsSystemAdminOrAuditorReadQuery.
+    read_only_query_actions = frozenset({"query", "details_query", "export_query"})
     pagination_class = DashboardReportPagination
 
     detail_query_parameters = DETAIL_QUERY_PARAMETERS
@@ -427,10 +541,43 @@ class DashboardReportViewSet(ReadOnlyModelViewSet):
     ordering = ["template_metadata__template_name"]
 
     def get_serializer_class(self) -> type:
-        """Return ReportDetailSerializer for the details action, otherwise the default serializer."""
-        if self.action == "details":
+        """
+        Return the serializer for the current action.
+
+        ReportDetailSerializer for the details actions. On OPTIONS, DRF describes the POST body by
+        calling get_serializer() with a cloned POST request; the only POST routes are the query
+        actions, so their body serializer (ReportQuerySerializer) is returned. Not decided by the
+        method alone: the query actions serialize their output with get_serializer().
+        """
+        if self.action == "metadata" and self.request.method == "POST":
+            return ReportQuerySerializer
+        if self.action in ("details", "details_query"):
             return ReportDetailSerializer
         return super().get_serializer_class()
+
+    def initial(self, request: Request, *args: Any, **kwargs: Any) -> None:
+        """
+        For the POST query actions, validate the JSON body and attach it as the report parameter source.
+
+        Runs after authentication and permission checks, and before @require_date_range, so the period,
+        filters and export options are all read from the body. An invalid body returns 400.
+        """
+        super().initial(request, *args, **kwargs)
+        if self.action in self.read_only_query_actions:
+            serializer = ReportQuerySerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            request.report_params = ReportParams(serializer.validated_data)
+
+    def _subscription_cost(self) -> SubscriptionCost:
+        """
+        Return the subscription cost configuration used for the report calculations.
+
+        The read-only query actions must not write, so they never create the default row
+        (SubscriptionCost.get() does); they use the same default values unsaved instead.
+        """
+        if getattr(self, "action", None) in self.read_only_query_actions:
+            return SubscriptionCost.get_or_default()
+        return SubscriptionCost.get()
 
     def _build_aggregated_queryset(self, base_qs: QuerySet[JobData]) -> QuerySet:
         """
@@ -439,7 +586,7 @@ class DashboardReportViewSet(ReadOnlyModelViewSet):
         because the custom filter methods (after_date, organizations, etc.) are only available
         on JobDataQuerySet, not on the ValuesQuerySet this method returns.
         """
-        subscription_cost = SubscriptionCost.get()
+        subscription_cost = self._subscription_cost()
         average_cost_employee_minute = subscription_cost.cost_employee_per_minute
         start_date = self.kwargs.get("start_date")
         end_date = self.kwargs.get("end_date")
@@ -541,6 +688,32 @@ class DashboardReportViewSet(ReadOnlyModelViewSet):
         """
         Returns paginated report data for dashboard, including label IDs per template row.
         """
+        return self._report_response()
+
+    @extend_schema(
+        summary="Get a list of report data for dashboard (with pagination), filters in the request body.",
+        description=(
+            "Read-only POST counterpart of GET report/ for large filter selections. Takes the filters in a JSON "
+            "body instead of the query string; pagination and ordering stay in the query string. "
+            "The next/previous links point at this route and must be requested with POST and the same body."
+        ),
+        request=ReportQuerySerializer,
+        parameters=REPORT_QUERY_STRING_PARAMETERS,
+        responses={200: ReportSerializer(many=True), **QUERY_ERROR_RESPONSES},
+    )
+    @action(detail=False, methods=["post"], url_path="query", parser_classes=[JSONParser])
+    @require_date_range
+    def query(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        """
+        Same as GET report/, with the filters in the JSON body.
+
+        Read-only query action: it must never write anything (auditors are allowed to call it,
+        see IsSystemAdminOrAuditorReadQuery).
+        """
+        return self._report_response()
+
+    def _report_response(self) -> Response:
+        """Build the paginated per-template report response, including label IDs per template row."""
         base_qs = self._filter_raw_jobdata_queryset(JobData.objects.all())
         queryset = self.filter_queryset(self._build_aggregated_queryset(base_qs))
         page = self.paginate_queryset(queryset)
@@ -698,7 +871,7 @@ class DashboardReportViewSet(ReadOnlyModelViewSet):
         hosts executed on, time taken to execute manually, time taken to create
         automation (if enabled), running time, automated costs, manual costs, and savings.
         """
-        enable_template_creation_time = SubscriptionCost.get().include_template_creation_time_in_costs
+        enable_template_creation_time = self._subscription_cost().include_template_creation_time_in_costs
 
         writer = csv.writer(response)
         headers = [
@@ -848,6 +1021,27 @@ class DashboardReportViewSet(ReadOnlyModelViewSet):
          - Top users and projects identify the most active users and projects in the given date range.
          All data is filtered by the provided date range and any additional filters (organization, template, label, project).
         """
+        return self._details_response()
+
+    @extend_schema(
+        summary="Returns summary, chart data, and top users/projects for dashboard, filters in the request body.",
+        description="Read-only POST counterpart of GET report/details/ for large filter selections.",
+        request=ReportQuerySerializer,
+        responses={200: ReportDetailSerializer, **QUERY_ERROR_RESPONSES},
+    )
+    @action(detail=False, methods=["post"], url_path="details/query", parser_classes=[JSONParser])
+    @require_date_range
+    def details_query(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        """
+        Same as GET report/details/, with the filters in the JSON body.
+
+        Read-only query action: it must never write anything (auditors are allowed to call it,
+        see IsSystemAdminOrAuditorReadQuery).
+        """
+        return self._details_response()
+
+    def _details_response(self) -> Response:
+        """Build the summary, chart data and top users/projects response."""
         filtered_qs = self._filter_raw_jobdata_queryset(JobData.objects.all())
 
         ### TOP USERS ###
@@ -945,10 +1139,41 @@ class DashboardReportViewSet(ReadOnlyModelViewSet):
     @require_date_range
     def export(self, request: Request, *args: Any, **kwargs: Any) -> HttpResponse | JsonResponse:
         """Exports report data as CSV based on the specified report type and format query parameters."""
+        return self._export_response()
 
+    @extend_schema(
+        summary="Exports report data as CSV, filters in the request body",
+        description=(
+            "Read-only POST counterpart of GET report/export/ for large filter selections. "
+            "Ordering stays in the query string."
+        ),
+        request=ReportQuerySerializer,
+        parameters=ORDERING_QUERY_PARAMETERS,
+        responses={(200, "text/csv; charset=UTF-8"): str, **QUERY_ERROR_RESPONSES},
+    )
+    @action(
+        methods=["post"],
+        detail=False,
+        url_path="export/query",
+        renderer_classes=[PassthroughRenderer],
+        parser_classes=[JSONParser],
+    )
+    @require_date_range
+    def export_query(self, request: Request, *args: Any, **kwargs: Any) -> HttpResponse | JsonResponse:
+        """
+        Same as GET report/export/, with the filters and export options in the JSON body.
+
+        Read-only query action: it must never write anything (auditors are allowed to call it,
+        see IsSystemAdminOrAuditorReadQuery).
+        """
+        return self._export_response()
+
+    def _export_response(self) -> HttpResponse | JsonResponse:
+        """Build the CSV export response for the requested report type and format."""
         # Validate report_type and export_format parameters
-        report_type = request.query_params.get("report_type", "summary")
-        export_format = request.query_params.get("export_format", "csv")
+        params = get_report_params(self.request)
+        report_type = params.get("report_type", "summary")
+        export_format = params.get("export_format", "csv")
 
         if export_format != "csv":
             return JsonResponse(

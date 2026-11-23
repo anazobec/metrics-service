@@ -5,12 +5,17 @@ Provides serializers for filter options, report data, subscription cost, and
 template metadata used by the dashboard reporting API endpoints.
 """
 
+import datetime
 import decimal
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from drf_spectacular.extensions import OpenApiSerializerFieldExtension
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
+from apps.dashboard_reports.filters import FILTER_FIELDS, MAX_SEARCH_TERM_LENGTH, MAX_SEARCH_TERMS, DateFilter
 from apps.dashboard_reports.models import DashboardTelemetry, FilterSet, JobData, SubscriptionCost, TemplateMetadata
 from apps.dashboard_reports.utils import sec2time
 
@@ -240,6 +245,139 @@ class ReportDetailSerializer(serializers.Serializer):
     def get_total_time_saving(self, obj: dict[str, Any]) -> float:
         """Return total time savings from automation converted from seconds to hours."""
         return self._get_rounded_value(obj, "total_time_savings", divisor=3600)
+
+
+@extend_schema_field(OpenApiTypes.DATE)
+class IsoDateStringField(serializers.CharField):
+    """
+    A date string validated exactly like the GET query string (date.fromisoformat) and kept as a string.
+
+    The value is passed on unchanged to the period parsing, so GET and POST accept the same dates.
+    """
+
+    default_error_messages = {"invalid_date": "Date has wrong format. Use YYYY-MM-DD."}
+
+    def __init__(self, **kwargs: Any) -> None:
+        kwargs.setdefault("trim_whitespace", False)
+        super().__init__(**kwargs)
+
+    def to_internal_value(self, data: Any) -> str:
+        """Reject strings that date.fromisoformat cannot parse."""
+        value = super().to_internal_value(data)
+        try:
+            datetime.date.fromisoformat(value)
+        except ValueError:
+            self.fail("invalid_date")
+        return value
+
+
+def _search_terms_field(help_text: str) -> serializers.ListField:
+    """Return an optional, capped list-of-search-terms field for a report filter."""
+    return serializers.ListField(
+        child=serializers.CharField(max_length=MAX_SEARCH_TERM_LENGTH),
+        max_length=MAX_SEARCH_TERMS,
+        required=False,
+        allow_null=True,
+        help_text=help_text,
+    )
+
+
+def _id_list_field(help_text: str) -> serializers.ListField:
+    """Return an optional list-of-integer-IDs field for a report filter; an empty list means no filter."""
+    return serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        allow_null=True,
+        help_text=f"{help_text} An empty list is the same as omitting the field.",
+    )
+
+
+class ReportQuerySerializer(serializers.Serializer):
+    """
+    Request body of the POST report query actions (report/query/, report/details/query/, report/export/query/).
+
+    Carries the same filters as the query string of the matching GET endpoints, including the
+    selection parameters (select_all_<field>, search_<field>, excluded_<field>, excluded_search_<field>
+    for organization, template, label and project). Pagination and ordering (page, page_size,
+    ordering / order_by) stay in the query string. Unknown keys are rejected; null means "not given".
+    """
+
+    period = serializers.ChoiceField(
+        choices=DateFilter.to_list(),
+        required=False,
+        allow_null=True,
+        help_text=f"Report period (default: {DateFilter.LAST_30_DAYS.value}).",
+    )
+    # Not trimmed, like the GET query string: " UTC" is an invalid timezone on both.
+    tz = serializers.CharField(
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        trim_whitespace=False,
+        help_text="IANA timezone (default: UTC).",
+    )
+    start_date = IsoDateStringField(
+        required=False,
+        allow_null=True,
+        help_text="Start date (YYYY-MM-DD). Required when period is 'custom'.",
+    )
+    end_date = IsoDateStringField(
+        required=False,
+        allow_null=True,
+        help_text="End date (YYYY-MM-DD). Required when period is 'custom'.",
+    )
+    job_type = serializers.ListField(
+        child=serializers.CharField(allow_blank=True),
+        required=False,
+        allow_null=True,
+        help_text=(
+            "Controller unified-job model names (e.g. job, systemjob, workflowjob). "
+            "Defaults to job and includes unclassified legacy rows; blank values are ignored."
+        ),
+    )
+    organization = _id_list_field("Filter by organization IDs.")
+    template = _id_list_field("Filter by template IDs.")
+    label = _id_list_field("Filter by label IDs.")
+    project = _id_list_field("Filter by project IDs.")
+    or__organization = _id_list_field("OR filter by organization IDs.")
+    or__template = _id_list_field("OR filter by template IDs.")
+    or__label = _id_list_field("OR filter by label IDs.")
+    or__project = _id_list_field("OR filter by project IDs.")
+    report_type = serializers.ChoiceField(
+        choices=["summary", "roi", "trends"],
+        required=False,
+        allow_null=True,
+        help_text="Type of report to export (export only, default: summary).",
+    )
+    export_format = serializers.ChoiceField(
+        choices=["csv"], required=False, allow_null=True, help_text="Export file format (export only, default: csv)."
+    )
+
+    def get_fields(self) -> dict[str, serializers.Field]:
+        """Add the selection parameters for every filter field."""
+        fields = super().get_fields()
+        for field in sorted(FILTER_FIELDS):
+            fields[f"select_all_{field}"] = serializers.BooleanField(
+                required=False,
+                allow_null=True,
+                help_text=f"Select every {field}: no filter on {field} (includes historical runs of deleted items).",
+            )
+            fields[f"search_{field}"] = _search_terms_field(
+                f"Select every {field} whose name contains one of the terms (same matching as the filter options)."
+            )
+            fields[f"excluded_{field}"] = _id_list_field(f"Deselect these {field} IDs.")
+            fields[f"excluded_search_{field}"] = _search_terms_field(
+                f"Deselect every {field} whose name contains one of the terms."
+            )
+        return fields
+
+    def to_internal_value(self, data: Any) -> dict[str, Any]:
+        """Reject unknown keys before validating the known fields."""
+        if isinstance(data, Mapping):
+            unknown = sorted(set(data) - set(self.fields))
+            if unknown:
+                raise serializers.ValidationError({key: ["Unknown parameter."] for key in unknown})
+        return super().to_internal_value(data)
 
 
 class SubscriptionCostSerializer(serializers.ModelSerializer):

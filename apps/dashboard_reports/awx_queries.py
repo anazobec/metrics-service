@@ -46,15 +46,20 @@ class AWXQuery(enum.Enum):
     RETENTION_SETTINGS = RETENTION_SETTINGS_QUERY
 
 
+def _ilike_contains_pattern(search_str: str) -> str:
+    """Return an ILIKE pattern matching names that contain search_str, with backslash as the escape character."""
+    # Escape backslash first, then ILIKE wildcards, so user-supplied % and _ are treated literally.
+    escaped = search_str.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return "%" + escaped + "%"
+
+
 def _build_where_clause(join_alias: str, search_str: str | None, pk: Any) -> tuple[str, list[Any]]:
     """Build WHERE clause and parameters for SQL query."""
     where_clauses = []
     params = []
     if search_str:
-        # Escape backslash first, then ILIKE wildcards, so user-supplied % and _ are treated literally.
-        escaped = search_str.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         where_clauses.append(f"{join_alias}name ilike %s ESCAPE E'\\\\'")
-        params.append("%" + escaped + "%")
+        params.append(_ilike_contains_pattern(search_str))
     if pk is not None:
         where_clauses.append(f"{join_alias}id = %s")
         params.append(pk)
@@ -246,3 +251,31 @@ def fetch_retention_settings(**kwargs) -> tuple[list[dict[str, Any]], int]:
         key=lambda r: (r["job_type"] or "", r["schedule_name"] or ""),
     )
     return items, total
+
+
+# Report filter field -> the query that lists its filter options (id and name columns first).
+FILTER_FIELD_OPTION_QUERIES: dict[str, AWXQuery] = {
+    "organization": AWXQuery.ORGANIZATIONS,
+    "template": AWXQuery.TEMPLATES,
+    "project": AWXQuery.PROJECTS,
+    "label": AWXQuery.LABELS,
+}
+
+
+def fetch_ids_matching_search(field: str, search_terms: list[str], db_connection: Any) -> set[int]:
+    """
+    Return the AWX IDs of every ``field`` option whose name matches any of the search terms.
+
+    Uses the filter option query of the field and the same name matching as the option endpoints
+    (name ILIKE '%term%', with backslash, % and _ escaped), so a search term selects exactly the
+    options the user saw in the filter dropdown. All terms are resolved in one query.
+    """
+    if not search_terms:
+        return set()
+    awx_query = FILTER_FIELD_OPTION_QUERIES[field]
+    # ILIKE ANY takes no ESCAPE clause; Postgres' default LIKE escape character is the backslash, the
+    # same one the option endpoints set explicitly (ESCAPE E'\\'), so each pattern matches identically.
+    query = f"SELECT _options.id FROM ({awx_query.value}) AS _options WHERE _options.name ILIKE ANY(%s)"  # noqa: S608 awx_query is an AWXQuery enum value (hardcoded literal); the patterns are a bound parameter
+    patterns = [_ilike_contains_pattern(term) for term in search_terms]
+    _, rows = _execute_db_query(db_connection, query, [patterns])
+    return {row[0] for row in rows}

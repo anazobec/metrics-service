@@ -4,23 +4,80 @@ Filter utilities for dashboard reports.
 Provides date range filtering via DateFilter enum, AND/OR filter helpers for
 organization, template, project and label query parameters, job-type filtering,
 and the CustomReportFilter backend used by DashboardReportViewSet.
+
+Report parameters are read through get_report_params(): from the query string for GET
+requests and from the validated JSON body for the POST query actions, so both share one code path.
 """
 
 import datetime
-from collections.abc import Sequence
+import functools
+import logging
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import psycopg
+from django.db import Error as DjangoDatabaseError
 from django.db import models
 from django.db.models import QuerySet
-from rest_framework import filters
-from rest_framework.exceptions import ValidationError
+from django.http import QueryDict
+from rest_framework import filters, serializers, status
+from rest_framework.exceptions import APIException, ValidationError
 from rest_framework.request import Request
 from rest_framework.views import APIView
 
+from apps.dashboard_reports.awx_queries import fetch_ids_matching_search
 from apps.dashboard_reports.models import JobData, label_ids_to_job_data_ids
+from apps.tasks.utils import get_db_connection
+
+logger = logging.getLogger(__name__)
 
 FILTER_FIELDS: frozenset[str] = frozenset({"organization", "template", "label", "project"})
+
+# Search terms are resolved against the AWX database, so their number and length are capped
+# (in the query string here, in the POST body by ReportQuerySerializer).
+MAX_SEARCH_TERMS = 100
+MAX_SEARCH_TERM_LENGTH = 512
+
+
+class ReportParams:
+    """
+    Report parameters taken from a validated POST query body.
+
+    Exposes the same get()/getlist() interface as request.query_params, so the filter helpers
+    and the period parsing read GET and POST parameters through one code path.
+    """
+
+    def __init__(self, data: Mapping[str, Any]) -> None:
+        self._data = dict(data)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Return the value for key, or default when it is missing or null."""
+        value = self._data.get(key)
+        return default if value is None else value
+
+    def getlist(self, key: str) -> list[Any]:
+        """Return the values for key as a list (empty when missing or null)."""
+        value = self._data.get(key)
+        if value is None:
+            return []
+        return list(value) if isinstance(value, list) else [value]
+
+
+def get_report_params(request: Any) -> ReportParams | QueryDict:
+    """
+    Return the source of report parameters for the request.
+
+    The POST query actions attach the validated body as request.report_params; every other
+    request reads the query string (request.query_params, or request.GET for a plain Django request).
+    """
+    params = getattr(request, "report_params", None)
+    if isinstance(params, ReportParams):
+        return params
+    query_params = getattr(request, "query_params", None)
+    return query_params if query_params is not None else request.GET
 
 
 def validate_custom_period_dates(start_date_str: str | None, end_date_str: str | None) -> None:
@@ -136,12 +193,12 @@ def _safe_int(value: str) -> int | None:
 
 
 def get_filter_options(request: Request) -> dict[str, list[int]]:
-    """Return AND filter options parsed from request query parameters as {field: [int, ...]}."""
+    """Return AND filter options parsed from the report parameters as {field: [int, ...]}."""
     return {field: sorted(values) for field in FILTER_FIELDS if (values := _collect_int_params(request, field))}
 
 
 def get_or_filter_options(request: Request) -> dict[str, list[int]]:
-    """Return OR filter options parsed from or__<field> request query parameters as {field: [int, ...]}."""
+    """Return OR filter options parsed from or__<field> report parameters as {field: [int, ...]}."""
     return {
         field: sorted(values) for field in FILTER_FIELDS if (values := _collect_int_params(request, f"or__{field}"))
     }
@@ -149,7 +206,7 @@ def get_or_filter_options(request: Request) -> dict[str, list[int]]:
 
 def get_job_type_filter(request: Request) -> models.Q:
     """Filter by requested Controller models, treating unclassified legacy rows as jobs."""
-    job_types = [value.strip() for value in request.query_params.getlist("job_type") if value.strip()]
+    job_types = [value.strip() for value in get_report_params(request).getlist("job_type") if value.strip()]
     if not job_types:
         job_types = ["job"]
     job_type_filter = models.Q(job_type__in=job_types)
@@ -159,7 +216,7 @@ def get_job_type_filter(request: Request) -> models.Q:
 
 
 def apply_or_filters(request: Request, queryset: QuerySet[JobData]) -> QuerySet[JobData]:
-    """Apply OR-combined filter conditions from or__<field> query params to the queryset."""
+    """Apply OR-combined filter conditions from or__<field> report parameters to the queryset."""
     or_options = get_or_filter_options(request=request)
     if not or_options:
         return queryset
@@ -179,8 +236,129 @@ def apply_or_filters(request: Request, queryset: QuerySet[JobData]) -> QuerySet[
 
 
 def _collect_int_params(request: Request, key: str) -> list[int]:
-    """Collect all integer values for a given query parameter key, skipping non-integer values."""
-    return [v for value in request.query_params.getlist(key) if (v := _safe_int(value)) is not None]
+    """Collect all integer values for a given parameter key, skipping non-integer values."""
+    return [v for value in get_report_params(request).getlist(key) if (v := _safe_int(value)) is not None]
+
+
+@dataclass(frozen=True)
+class FieldSelection:
+    """
+    Resolved selection for one filter field (organization, template, label or project).
+
+    include: None means no positive filter on the field (every job, including historical runs of
+        deleted items and rows with a NULL ID); a list keeps only jobs with one of those IDs, so an
+        empty list matches nothing.
+    exclude: IDs whose jobs are removed afterwards.
+    """
+
+    include: list[int] | None
+    exclude: list[int]
+
+
+class AWXSearchUnavailable(APIException):
+    """The search terms of a report filter could not be resolved because the AWX database query failed."""
+
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = "Could not resolve the search terms against the AWX database. Try again later."
+    default_code = "awx_search_unavailable"
+
+
+def _bool_param(params: Any, key: str) -> bool:
+    """Read a boolean parameter from the query string with the true values of DRF's BooleanField (which validates the POST body)."""
+    value = params.get(key)
+    if isinstance(value, bool):
+        return value
+    # BooleanField lower-cases strings before comparing them with TRUE_VALUES; do the same.
+    return isinstance(value, str) and value.strip().lower() in serializers.BooleanField.TRUE_VALUES
+
+
+def _search_terms(params: Any, key: str) -> list[str]:
+    """
+    Collect the non-blank search terms for a parameter key, stripped like the option endpoints' search.
+
+    Enforces the same limits as the POST body (MAX_SEARCH_TERMS, MAX_SEARCH_TERM_LENGTH), so the
+    query string cannot send more or longer terms to AWX; raises ValidationError (400) otherwise.
+    """
+    terms = [term for value in params.getlist(key) if (term := str(value).strip())]
+    if len(terms) > MAX_SEARCH_TERMS:
+        raise ValidationError({key: [f"Ensure this field has no more than {MAX_SEARCH_TERMS} elements."]})
+    if any(len(term) > MAX_SEARCH_TERM_LENGTH for term in terms):
+        raise ValidationError({key: [f"Ensure each search term has no more than {MAX_SEARCH_TERM_LENGTH} characters."]})
+    return terms
+
+
+def _resolve_field_selection(
+    request: Request,
+    field: str,
+    explicit_ids: list[int],
+    search_terms: list[str],
+    excluded_search_terms: list[str],
+    awx_connection: Callable[[], Any],
+) -> FieldSelection:
+    """
+    Resolve the selection parameters of one field to a FieldSelection.
+
+    With select_all_<field>: keep every job, then exclude excluded_<field> IDs and the items matching
+    excluded_search_<field>. Without it: keep jobs whose ID is an explicit <field> ID or matches a
+    search_<field> term, then apply the same exclusions. Without any positive parameter (no IDs, no
+    search terms) there is no positive filter, as before. Search terms (already collected and validated
+    by _search_terms) are resolved against AWX, through the connection returned by awx_connection
+    (only called when there are search terms).
+    """
+    params = get_report_params(request)
+
+    def matches(terms: list[str]) -> set[int]:
+        if not terms:
+            return set()
+        try:
+            return fetch_ids_matching_search(field, terms, db_connection=awx_connection())
+        except (DjangoDatabaseError, psycopg.Error) as exc:
+            # Only database errors mean AWX is unavailable; anything else is a bug and stays a 500.
+            logger.exception(f"Error resolving {field} search terms against the AWX database")
+            raise AWXSearchUnavailable() from exc
+
+    if _bool_param(params, f"select_all_{field}") or not (explicit_ids or search_terms):
+        include = None
+    else:
+        include = sorted(set(explicit_ids) | matches(search_terms))
+    exclude = sorted(set(_collect_int_params(request, f"excluded_{field}")) | matches(excluded_search_terms))
+    return FieldSelection(include=include, exclude=exclude)
+
+
+def get_field_selections(request: Request) -> dict[str, FieldSelection]:
+    """
+    Return the resolved selection of every filter field, cached on the request.
+
+    The report views apply CustomReportFilter several times per request (e.g. details and its
+    chart data); caching keeps search terms from being resolved against AWX more than once.
+    The selection is resolved per request, so select_all and search terms include items created later.
+    """
+    cached = getattr(request, "_report_field_selections", None)
+    if isinstance(cached, dict):
+        return cached
+    filter_options = get_filter_options(request)
+    # Collect (and validate) the search terms of every field before any of them opens the AWX connection.
+    params = get_report_params(request)
+    terms = {
+        key: _search_terms(params, key)
+        for field in FILTER_FIELDS
+        for key in (f"search_{field}", f"excluded_search_{field}")
+    }
+    # One AWX connection (and liveness probe) per request, opened only if a field has search terms.
+    awx_connection = functools.cache(lambda: get_db_connection("awx"))
+    selections = {
+        field: _resolve_field_selection(
+            request,
+            field,
+            filter_options.get(field, []),
+            terms[f"search_{field}"],
+            terms[f"excluded_search_{field}"],
+            awx_connection,
+        )
+        for field in FILTER_FIELDS
+    }
+    request._report_field_selections = selections
+    return selections
 
 
 class CustomReportFilter(filters.BaseFilterBackend):
@@ -199,11 +377,12 @@ class CustomReportFilter(filters.BaseFilterBackend):
         end_date = view.kwargs.get("end_date")
 
         if start_date is None or end_date is None:
-            period = request.query_params.get("period", None)
-            tz = request.query_params.get("tz", "UTC") or "UTC"
+            params = get_report_params(request)
+            period = params.get("period", None)
+            tz = params.get("tz", "UTC") or "UTC"
             if period == DateFilter.CUSTOM.value:
-                start_date_str = request.query_params.get("start_date")
-                end_date_str = request.query_params.get("end_date")
+                start_date_str = params.get("start_date")
+                end_date_str = params.get("end_date")
                 validate_custom_period_dates(start_date_str, end_date_str)
                 try:
                     start_date, end_date = DateFilter.custom_range_to_start_date_end_date(
@@ -218,12 +397,18 @@ class CustomReportFilter(filters.BaseFilterBackend):
         queryset = queryset.before_date(end_date)
         queryset = queryset.filter(get_job_type_filter(request))
 
-        # AND filters
-        filter_options = get_filter_options(request)
-        queryset = queryset.organizations(filter_options.get("organization", None))
-        queryset = queryset.projects(filter_options.get("project", None))
-        queryset = queryset.templates(filter_options.get("template", None))
-        queryset = queryset.labels(filter_options.get("label", None))
+        # AND filters, including the selection parameters (select_all / search / excluded / excluded_search)
+        selections = get_field_selections(request)
+        if any(selection.include == [] for selection in selections.values()):
+            # A selection that resolves to nothing (e.g. a search without matches) filters to nothing.
+            return queryset.none()
+        queryset = queryset.organizations(selections["organization"].include)
+        queryset = queryset.projects(selections["project"].include)
+        queryset = queryset.templates(selections["template"].include)
+        queryset = queryset.labels(selections["label"].include)
+        for field in ("organization", "project", "template", "label"):
+            if selections[field].exclude:
+                queryset = queryset.exclude_ids(field, selections[field].exclude)
 
         # OR filters
         queryset = apply_or_filters(request=request, queryset=queryset)

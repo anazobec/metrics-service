@@ -1496,6 +1496,94 @@
                     },
                     {
                         "in": "query",
+                        "name": "excluded_label",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            }
+                        },
+                        "description": "Deselect these label IDs (multiple allowed). A job with any excluded label is excluded, even if it has a selected label."
+                    },
+                    {
+                        "in": "query",
+                        "name": "excluded_organization",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            }
+                        },
+                        "description": "Deselect these organization IDs (multiple allowed)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "excluded_project",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            }
+                        },
+                        "description": "Deselect these project IDs (multiple allowed)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "excluded_search_label",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Deselect every label whose name contains the term (multiple allowed)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "excluded_search_organization",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Deselect every organization whose name contains the term (multiple allowed)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "excluded_search_project",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Deselect every project whose name contains the term (multiple allowed)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "excluded_search_template",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Deselect every template whose name contains the term (multiple allowed)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "excluded_template",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            }
+                        },
+                        "description": "Deselect these template IDs (multiple allowed)."
+                    },
+                    {
+                        "in": "query",
                         "name": "job_type",
                         "schema": {
                             "type": "array",
@@ -1626,6 +1714,82 @@
                             }
                         },
                         "description": "Filter by project ID (multiple allowed)"
+                    },
+                    {
+                        "in": "query",
+                        "name": "search_label",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Select every label whose name contains the term (case-insensitive, the same matching as the label filter options; multiple allowed). Combined with the explicit label IDs. A selection that matches nothing returns no data."
+                    },
+                    {
+                        "in": "query",
+                        "name": "search_organization",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Select every organization whose name contains the term (case-insensitive, the same matching as the organization filter options; multiple allowed). Combined with the explicit organization IDs. A selection that matches nothing returns no data."
+                    },
+                    {
+                        "in": "query",
+                        "name": "search_project",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Select every project whose name contains the term (case-insensitive, the same matching as the project filter options; multiple allowed). Combined with the explicit project IDs. A selection that matches nothing returns no data."
+                    },
+                    {
+                        "in": "query",
+                        "name": "search_template",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Select every template whose name contains the term (case-insensitive, the same matching as the template filter options; multiple allowed). Combined with the explicit template IDs. A selection that matches nothing returns no data."
+                    },
+                    {
+                        "in": "query",
+                        "name": "select_all_label",
+                        "schema": {
+                            "type": "boolean"
+                        },
+                        "description": "Select every label: same as no label filter, including historical runs of deleted items and jobs without a label. Exclusions still apply."
+                    },
+                    {
+                        "in": "query",
+                        "name": "select_all_organization",
+                        "schema": {
+                            "type": "boolean"
+                        },
+                        "description": "Select every organization: same as no organization filter, including historical runs of deleted items and jobs without a organization. Exclusions still apply."
+                    },
+                    {
+                        "in": "query",
+                        "name": "select_all_project",
+                        "schema": {
+                            "type": "boolean"
+                        },
+                        "description": "Select every project: same as no project filter, including historical runs of deleted items and jobs without a project. Exclusions still apply."
+                    },
+                    {
+                        "in": "query",
+                        "name": "select_all_template",
+                        "schema": {
+                            "type": "boolean"
+                        },
+                        "description": "Select every template: same as no template filter, including historical runs of deleted items and jobs without a template. Exclusions still apply."
                     },
                     {
                         "in": "query",
@@ -1750,6 +1914,94 @@
                     },
                     {
                         "in": "query",
+                        "name": "excluded_label",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            }
+                        },
+                        "description": "Deselect these label IDs (multiple allowed). A job with any excluded label is excluded, even if it has a selected label."
+                    },
+                    {
+                        "in": "query",
+                        "name": "excluded_organization",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            }
+                        },
+                        "description": "Deselect these organization IDs (multiple allowed)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "excluded_project",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            }
+                        },
+                        "description": "Deselect these project IDs (multiple allowed)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "excluded_search_label",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Deselect every label whose name contains the term (multiple allowed)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "excluded_search_organization",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Deselect every organization whose name contains the term (multiple allowed)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "excluded_search_project",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Deselect every project whose name contains the term (multiple allowed)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "excluded_search_template",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Deselect every template whose name contains the term (multiple allowed)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "excluded_template",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            }
+                        },
+                        "description": "Deselect these template IDs (multiple allowed)."
+                    },
+                    {
+                        "in": "query",
                         "name": "job_type",
                         "schema": {
                             "type": "array",
@@ -1883,6 +2135,82 @@
                     },
                     {
                         "in": "query",
+                        "name": "search_label",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Select every label whose name contains the term (case-insensitive, the same matching as the label filter options; multiple allowed). Combined with the explicit label IDs. A selection that matches nothing returns no data."
+                    },
+                    {
+                        "in": "query",
+                        "name": "search_organization",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Select every organization whose name contains the term (case-insensitive, the same matching as the organization filter options; multiple allowed). Combined with the explicit organization IDs. A selection that matches nothing returns no data."
+                    },
+                    {
+                        "in": "query",
+                        "name": "search_project",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Select every project whose name contains the term (case-insensitive, the same matching as the project filter options; multiple allowed). Combined with the explicit project IDs. A selection that matches nothing returns no data."
+                    },
+                    {
+                        "in": "query",
+                        "name": "search_template",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Select every template whose name contains the term (case-insensitive, the same matching as the template filter options; multiple allowed). Combined with the explicit template IDs. A selection that matches nothing returns no data."
+                    },
+                    {
+                        "in": "query",
+                        "name": "select_all_label",
+                        "schema": {
+                            "type": "boolean"
+                        },
+                        "description": "Select every label: same as no label filter, including historical runs of deleted items and jobs without a label. Exclusions still apply."
+                    },
+                    {
+                        "in": "query",
+                        "name": "select_all_organization",
+                        "schema": {
+                            "type": "boolean"
+                        },
+                        "description": "Select every organization: same as no organization filter, including historical runs of deleted items and jobs without a organization. Exclusions still apply."
+                    },
+                    {
+                        "in": "query",
+                        "name": "select_all_project",
+                        "schema": {
+                            "type": "boolean"
+                        },
+                        "description": "Select every project: same as no project filter, including historical runs of deleted items and jobs without a project. Exclusions still apply."
+                    },
+                    {
+                        "in": "query",
+                        "name": "select_all_template",
+                        "schema": {
+                            "type": "boolean"
+                        },
+                        "description": "Select every template: same as no template filter, including historical runs of deleted items and jobs without a template. Exclusions still apply."
+                    },
+                    {
+                        "in": "query",
                         "name": "start_date",
                         "schema": {
                             "type": "string",
@@ -1938,6 +2266,68 @@
                 "x-ai-description": "Retrieve single dashboard reports report detail"
             }
         },
+        "/api/v1/dashboard_reports/report/details/query/": {
+            "post": {
+                "operationId": "dashboard_reports_report_details_query_create",
+                "description": "Read-only POST counterpart of GET report/details/ for large filter selections.",
+                "summary": "Returns summary, chart data, and top users/projects for dashboard, filters in the request body.",
+                "tags": [
+                    "dashboard_reports"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ReportQueryRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    },
+                    {
+                        "basicAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ReportDetail"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {}
+                                }
+                            }
+                        },
+                        "description": "Invalid request. Body validation errors (unknown keys, wrong types, an invalid period or date format) are an object keyed by the offending field, e.g. {\"templates\": [\"Unknown parameter.\"]}. An invalid timezone, a start_date after end_date, or a custom period without dates returns {\"error\": \"<message>\", \"status_code\": 400, \"timestamp\": \"<ISO 8601>\"}."
+                    },
+                    "503": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {}
+                                }
+                            }
+                        },
+                        "description": "The search terms could not be resolved because the AWX database is unavailable."
+                    }
+                },
+                "x-ai-description": "Create new dashboard reports report details query"
+            }
+        },
         "/api/v1/dashboard_reports/report/export/": {
             "get": {
                 "operationId": "dashboard_reports_report_export_retrieve",
@@ -1952,6 +2342,94 @@
                             "format": "date"
                         },
                         "description": "End date in 'YYYY-MM-DD' format. Required when period is 'custom'."
+                    },
+                    {
+                        "in": "query",
+                        "name": "excluded_label",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            }
+                        },
+                        "description": "Deselect these label IDs (multiple allowed). A job with any excluded label is excluded, even if it has a selected label."
+                    },
+                    {
+                        "in": "query",
+                        "name": "excluded_organization",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            }
+                        },
+                        "description": "Deselect these organization IDs (multiple allowed)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "excluded_project",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            }
+                        },
+                        "description": "Deselect these project IDs (multiple allowed)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "excluded_search_label",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Deselect every label whose name contains the term (multiple allowed)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "excluded_search_organization",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Deselect every organization whose name contains the term (multiple allowed)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "excluded_search_project",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Deselect every project whose name contains the term (multiple allowed)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "excluded_search_template",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Deselect every template whose name contains the term (multiple allowed)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "excluded_template",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            }
+                        },
+                        "description": "Deselect these template IDs (multiple allowed)."
                     },
                     {
                         "in": "query",
@@ -2094,6 +2572,82 @@
                     },
                     {
                         "in": "query",
+                        "name": "search_label",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Select every label whose name contains the term (case-insensitive, the same matching as the label filter options; multiple allowed). Combined with the explicit label IDs. A selection that matches nothing returns no data."
+                    },
+                    {
+                        "in": "query",
+                        "name": "search_organization",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Select every organization whose name contains the term (case-insensitive, the same matching as the organization filter options; multiple allowed). Combined with the explicit organization IDs. A selection that matches nothing returns no data."
+                    },
+                    {
+                        "in": "query",
+                        "name": "search_project",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Select every project whose name contains the term (case-insensitive, the same matching as the project filter options; multiple allowed). Combined with the explicit project IDs. A selection that matches nothing returns no data."
+                    },
+                    {
+                        "in": "query",
+                        "name": "search_template",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Select every template whose name contains the term (case-insensitive, the same matching as the template filter options; multiple allowed). Combined with the explicit template IDs. A selection that matches nothing returns no data."
+                    },
+                    {
+                        "in": "query",
+                        "name": "select_all_label",
+                        "schema": {
+                            "type": "boolean"
+                        },
+                        "description": "Select every label: same as no label filter, including historical runs of deleted items and jobs without a label. Exclusions still apply."
+                    },
+                    {
+                        "in": "query",
+                        "name": "select_all_organization",
+                        "schema": {
+                            "type": "boolean"
+                        },
+                        "description": "Select every organization: same as no organization filter, including historical runs of deleted items and jobs without a organization. Exclusions still apply."
+                    },
+                    {
+                        "in": "query",
+                        "name": "select_all_project",
+                        "schema": {
+                            "type": "boolean"
+                        },
+                        "description": "Select every project: same as no project filter, including historical runs of deleted items and jobs without a project. Exclusions still apply."
+                    },
+                    {
+                        "in": "query",
+                        "name": "select_all_template",
+                        "schema": {
+                            "type": "boolean"
+                        },
+                        "description": "Select every template: same as no template filter, including historical runs of deleted items and jobs without a template. Exclusions still apply."
+                    },
+                    {
+                        "in": "query",
                         "name": "start_date",
                         "schema": {
                             "type": "string",
@@ -2157,6 +2711,178 @@
                     }
                 },
                 "x-ai-description": "Retrieve single dashboard reports report export"
+            }
+        },
+        "/api/v1/dashboard_reports/report/export/query/": {
+            "post": {
+                "operationId": "dashboard_reports_report_export_query_create",
+                "description": "Read-only POST counterpart of GET report/export/ for large filter selections. Ordering stays in the query string.",
+                "summary": "Exports report data as CSV, filters in the request body",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "ordering",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Field to order by (e.g. 'template_metadata__template_name', 'successful_runs', 'savings', 'time_savings', etc.). `order_by` is accepted as an alias for this parameter; if both are given, `ordering` takes precedence."
+                    }
+                ],
+                "tags": [
+                    "dashboard_reports"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ReportQueryRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    },
+                    {
+                        "basicAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "text/csv; charset=UTF-8": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {}
+                                }
+                            }
+                        },
+                        "description": "Invalid request. Body validation errors (unknown keys, wrong types, an invalid period or date format) are an object keyed by the offending field, e.g. {\"templates\": [\"Unknown parameter.\"]}. An invalid timezone, a start_date after end_date, or a custom period without dates returns {\"error\": \"<message>\", \"status_code\": 400, \"timestamp\": \"<ISO 8601>\"}."
+                    },
+                    "503": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {}
+                                }
+                            }
+                        },
+                        "description": "The search terms could not be resolved because the AWX database is unavailable."
+                    }
+                },
+                "x-ai-description": "Create new dashboard reports report export query"
+            }
+        },
+        "/api/v1/dashboard_reports/report/query/": {
+            "post": {
+                "operationId": "dashboard_reports_report_query_create",
+                "description": "Read-only POST counterpart of GET report/ for large filter selections. Takes the filters in a JSON body instead of the query string; pagination and ordering stay in the query string. The next/previous links point at this route and must be requested with POST and the same body.",
+                "summary": "Get a list of report data for dashboard (with pagination), filters in the request body.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "count_disabled",
+                        "schema": {
+                            "type": "boolean"
+                        },
+                        "description": "If present (any value), omits `count`, `next`, and `previous` from the paginated response, returning only `results`. Useful to skip the COUNT query for large listings."
+                    },
+                    {
+                        "in": "query",
+                        "name": "ordering",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Field to order by (e.g. 'template_metadata__template_name', 'successful_runs', 'savings', 'time_savings', etc.). `order_by` is accepted as an alias for this parameter; if both are given, `ordering` takes precedence."
+                    },
+                    {
+                        "in": "query",
+                        "name": "page",
+                        "schema": {
+                            "type": "integer",
+                            "default": 1
+                        },
+                        "description": "Page number (default: 1)",
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "page_size",
+                        "schema": {
+                            "type": "integer",
+                            "default": 25
+                        },
+                        "description": "Results per page (default: 25).",
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "dashboard_reports"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ReportQueryRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    },
+                    {
+                        "basicAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PaginatedReportList"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {}
+                                }
+                            }
+                        },
+                        "description": "Invalid request. Body validation errors (unknown keys, wrong types, an invalid period or date format) are an object keyed by the offending field, e.g. {\"templates\": [\"Unknown parameter.\"]}. An invalid timezone, a start_date after end_date, or a custom period without dates returns {\"error\": \"<message>\", \"status_code\": 400, \"timestamp\": \"<ISO 8601>\"}."
+                    },
+                    "503": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {}
+                                }
+                            }
+                        },
+                        "description": "The search terms could not be resolved because the AWX database is unavailable."
+                    }
+                },
+                "x-ai-description": "Create new dashboard reports report query"
             }
         },
         "/api/v1/dashboard_reports/subscription_costs/": {
@@ -18970,6 +19696,277 @@
                         ],
                         "readOnly": true,
                         "description": "Chart data showing host job runs over time"
+                    }
+                }
+            },
+            "ReportQueryRequest": {
+                "type": "object",
+                "description": "Request body of the POST report query actions (report/query/, report/details/query/, report/export/query/).\n\nCarries the same filters as the query string of the matching GET endpoints, including the\nselection parameters (select_all_<field>, search_<field>, excluded_<field>, excluded_search_<field>\nfor organization, template, label and project). Pagination and ordering (page, page_size,\nordering / order_by) stay in the query string. Unknown keys are rejected; null means \"not given\".",
+                "properties": {
+                    "period": {
+                        "enum": [
+                            "last_7_days",
+                            "last_14_days",
+                            "last_30_days",
+                            "last_60_days",
+                            "last_90_days",
+                            "custom",
+                            null
+                        ],
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Report period (default: last_30_days).\n\n* `last_7_days` - last_7_days\n* `last_14_days` - last_14_days\n* `last_30_days` - last_30_days\n* `last_60_days` - last_60_days\n* `last_90_days` - last_90_days\n* `custom` - custom"
+                    },
+                    "tz": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "IANA timezone (default: UTC)."
+                    },
+                    "start_date": {
+                        "type": "string",
+                        "format": "date",
+                        "nullable": true,
+                        "minLength": 1,
+                        "description": "Start date (YYYY-MM-DD). Required when period is 'custom'."
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "format": "date",
+                        "nullable": true,
+                        "minLength": 1,
+                        "description": "End date (YYYY-MM-DD). Required when period is 'custom'."
+                    },
+                    "job_type": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "nullable": true,
+                        "description": "Controller unified-job model names (e.g. job, systemjob, workflowjob). Defaults to job and includes unclassified legacy rows; blank values are ignored."
+                    },
+                    "organization": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "nullable": true,
+                        "description": "Filter by organization IDs. An empty list is the same as omitting the field."
+                    },
+                    "template": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "nullable": true,
+                        "description": "Filter by template IDs. An empty list is the same as omitting the field."
+                    },
+                    "label": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "nullable": true,
+                        "description": "Filter by label IDs. An empty list is the same as omitting the field."
+                    },
+                    "project": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "nullable": true,
+                        "description": "Filter by project IDs. An empty list is the same as omitting the field."
+                    },
+                    "or__organization": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "nullable": true,
+                        "description": "OR filter by organization IDs. An empty list is the same as omitting the field."
+                    },
+                    "or__template": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "nullable": true,
+                        "description": "OR filter by template IDs. An empty list is the same as omitting the field."
+                    },
+                    "or__label": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "nullable": true,
+                        "description": "OR filter by label IDs. An empty list is the same as omitting the field."
+                    },
+                    "or__project": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "nullable": true,
+                        "description": "OR filter by project IDs. An empty list is the same as omitting the field."
+                    },
+                    "report_type": {
+                        "enum": [
+                            "summary",
+                            "roi",
+                            "trends",
+                            null
+                        ],
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Type of report to export (export only, default: summary).\n\n* `summary` - summary\n* `roi` - roi\n* `trends` - trends"
+                    },
+                    "export_format": {
+                        "enum": [
+                            "csv",
+                            null
+                        ],
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Export file format (export only, default: csv).\n\n* `csv` - csv"
+                    },
+                    "select_all_label": {
+                        "type": "boolean",
+                        "nullable": true,
+                        "description": "Select every label: no filter on label (includes historical runs of deleted items)."
+                    },
+                    "search_label": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512
+                        },
+                        "nullable": true,
+                        "description": "Select every label whose name contains one of the terms (same matching as the filter options).",
+                        "maxItems": 100
+                    },
+                    "excluded_label": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "nullable": true,
+                        "description": "Deselect these label IDs. An empty list is the same as omitting the field."
+                    },
+                    "excluded_search_label": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512
+                        },
+                        "nullable": true,
+                        "description": "Deselect every label whose name contains one of the terms.",
+                        "maxItems": 100
+                    },
+                    "select_all_organization": {
+                        "type": "boolean",
+                        "nullable": true,
+                        "description": "Select every organization: no filter on organization (includes historical runs of deleted items)."
+                    },
+                    "search_organization": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512
+                        },
+                        "nullable": true,
+                        "description": "Select every organization whose name contains one of the terms (same matching as the filter options).",
+                        "maxItems": 100
+                    },
+                    "excluded_organization": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "nullable": true,
+                        "description": "Deselect these organization IDs. An empty list is the same as omitting the field."
+                    },
+                    "excluded_search_organization": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512
+                        },
+                        "nullable": true,
+                        "description": "Deselect every organization whose name contains one of the terms.",
+                        "maxItems": 100
+                    },
+                    "select_all_project": {
+                        "type": "boolean",
+                        "nullable": true,
+                        "description": "Select every project: no filter on project (includes historical runs of deleted items)."
+                    },
+                    "search_project": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512
+                        },
+                        "nullable": true,
+                        "description": "Select every project whose name contains one of the terms (same matching as the filter options).",
+                        "maxItems": 100
+                    },
+                    "excluded_project": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "nullable": true,
+                        "description": "Deselect these project IDs. An empty list is the same as omitting the field."
+                    },
+                    "excluded_search_project": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512
+                        },
+                        "nullable": true,
+                        "description": "Deselect every project whose name contains one of the terms.",
+                        "maxItems": 100
+                    },
+                    "select_all_template": {
+                        "type": "boolean",
+                        "nullable": true,
+                        "description": "Select every template: no filter on template (includes historical runs of deleted items)."
+                    },
+                    "search_template": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512
+                        },
+                        "nullable": true,
+                        "description": "Select every template whose name contains one of the terms (same matching as the filter options).",
+                        "maxItems": 100
+                    },
+                    "excluded_template": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "nullable": true,
+                        "description": "Deselect these template IDs. An empty list is the same as omitting the field."
+                    },
+                    "excluded_search_template": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512
+                        },
+                        "nullable": true,
+                        "description": "Deselect every template whose name contains one of the terms.",
+                        "maxItems": 100
                     }
                 }
             },

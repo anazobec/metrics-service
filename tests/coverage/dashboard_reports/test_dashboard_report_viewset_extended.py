@@ -116,7 +116,7 @@ def test_require_date_range_returns_error_when_start_after_end():
 
     # Build a minimal view-like object
     view = MagicMock()
-    view.request.GET.get = lambda key, default=None: {
+    view.request.query_params.get = lambda key, default=None: {
         "period": "last_7_days",
         "tz": "UTC",
     }.get(key, default)
@@ -159,7 +159,7 @@ def test_require_date_range_injects_kwargs_when_valid():
         return "ok"
 
     view = MagicMock()
-    view.request.GET.get = lambda key, default=None: {
+    view.request.query_params.get = lambda key, default=None: {
         "period": "last_7_days",
         "tz": "UTC",
     }.get(key, default)
@@ -683,7 +683,7 @@ def test_require_date_range_missing_period_defaults_to_last_30_days():
         return "reached"
 
     view = MagicMock()
-    view.request.GET.get = lambda key, default=None: default
+    view.request.query_params.get = lambda key, default=None: default
     view.kwargs = {}
 
     result = fake_view(view)

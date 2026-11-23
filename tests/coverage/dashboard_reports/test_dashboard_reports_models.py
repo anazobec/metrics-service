@@ -49,6 +49,33 @@ def test_subscription_cost_get_creates_default():
 
 @pytest.mark.unit
 @pytest.mark.django_db
+def test_subscription_cost_get_or_default_does_not_create():
+    from apps.dashboard_reports.models import SubscriptionCost
+
+    SubscriptionCost.objects.all().delete()
+    cost = SubscriptionCost.get_or_default()
+
+    assert not SubscriptionCost.objects.exists()
+    assert cost.pk == 1
+    assert cost.monthly_subscription_cost == decimal.Decimal("5000.00")
+    assert cost.engineer_avg_hourly_rate == decimal.Decimal("60.00")
+    assert cost.include_template_creation_time_in_costs is True
+
+
+@pytest.mark.unit
+@pytest.mark.django_db
+def test_subscription_cost_get_or_default_returns_existing():
+    from apps.dashboard_reports.models import SubscriptionCost
+
+    SubscriptionCost.objects.create(monthly_subscription_cost="10.00", engineer_avg_hourly_rate="20.00")
+    cost = SubscriptionCost.get_or_default()
+
+    assert cost.monthly_subscription_cost == decimal.Decimal("10.00")
+    assert SubscriptionCost.objects.count() == 1
+
+
+@pytest.mark.unit
+@pytest.mark.django_db
 def test_subscription_cost_per_minute():
     from apps.dashboard_reports.models import SubscriptionCost
 
